@@ -469,9 +469,9 @@
           </label>
           <p class="empty">Сервер на этом компьютере, формат OpenAI: POST /audio/speech. Подходят Piper, Silero через LocalAI или свой мост. Нужны CORS и доступ к localhost.</p>
         </div>
-        <div id="yandexVoiceBox" hidden>
+        <div id="yandexVoiceBox">
           <label class="f">Ключ SpeechKit
-            <input id="yandexKey" type="password" placeholder="Api-Key или IAM-токен" spellcheck="false" autocomplete="off">
+            <input id="yandexKey" type="password" placeholder="AQVNxT… — ключ SpeechKit, не IAM" spellcheck="false" autocomplete="off">
           </label>
           <label class="f">Каталог, folderId
             <input id="yandexFolder" type="text" placeholder="нужен для IAM, для сервисного ключа можно пусто" spellcheck="false" autocomplete="off">
@@ -497,7 +497,7 @@
           <label class="f">Эмоция
             <select id="yandexEmotion"></select>
           </label>
-          <p class="empty">Запрос идёт в SpeechKit v1: tts.api.cloud.yandex.net. Ключ остаётся в браузере. Скорость — общий ползунок.</p>
+          <p class="empty">Ключ AQVNxT… уходит заголовком Api-Key в SpeechKit v3. Каталог для такого ключа не нужен. Звук приходит кусками, студия собирает их сама.</p>
         </div>
         <label class="f">Скорость <span id="rateVal">1.00</span>
           <input id="rate" type="range" min="0.7" max="1.5" step="0.05" value="1">
@@ -920,6 +920,18 @@ function push(user, text) {
     settings.yandexFolder = $("yandexFolder").value.trim();
     settings.yandexVoice = $("yandexVoice").value || "alena";
     settings.yandexEmotion = $("yandexEmotion").value || "neutral";
+    if (/^AQVN/i.test(String(settings.key || "").trim()) && !String(settings.yandexKey || "").trim()) {
+      settings.yandexKey = String(settings.key).trim();
+      settings.key = "";
+      $("yandexKey").value = settings.yandexKey;
+      $("apiKey").value = "";
+      settings.voiceEngine = "yandex";
+      $("voiceEngine").value = "yandex";
+      if (!settings._aqvnNoted) {
+        settings._aqvnNoted = true;
+        log("Ключ AQVNxT — это SpeechKit, не ключ чата. Перенёс его в голос Яндекса.", "ai");
+      }
+    }
     settings.personality = $("personality").value;
     settings.interval = Number($("interval").value) || 8;
     settings.economy = $("economy").checked;
@@ -1899,18 +1911,103 @@ function push(user, text) {
     sel.value = list.indexOf(keep) >= 0 ? keep : list[0];
   }
 
+  function normalizeYandexKey(raw) {
+    return String(raw || "").trim().replace(/^(Api-Key|Bearer)\s+/i, "").replace(/\s+/g, "");
+  }
+
   function yandexAuthHeader(raw) {
-    var key = String(raw || "").trim();
-    if (/^(Api-Key|Bearer)\s+/i.test(key)) return key;
+    var key = normalizeYandexKey(raw);
     if (/^(t1\.|eyJ)/.test(key)) return "Bearer " + key;
     return "Api-Key " + key;
+  }
+
+  function yandexChunksToBlob(buf, contentType, wav) {
+    var type = String(contentType || "");
+    if (/audio|ogg|mpeg|wav/i.test(type) && !/json/i.test(type)) {
+      return new Blob([buf], { type: type || (wav ? "audio/wav" : "audio/mpeg") });
+    }
+    var text = new TextDecoder().decode(buf).trim();
+    if (!text || (text.charAt(0) !== "{" && text.charAt(0) !== "[")) {
+      return new Blob([buf], { type: wav ? "audio/wav" : "audio/mpeg" });
+    }
+    var pieces = [];
+    function take(obj) {
+      if (!obj || typeof obj !== "object") return;
+      if (obj.audioChunk && obj.audioChunk.data) pieces.push(obj.audioChunk.data);
+      if (obj.result) take(obj.result);
+      if (Array.isArray(obj)) obj.forEach(take);
+    }
+    text.split(/\r?\n/).forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      try { take(JSON.parse(line)); } catch (err) {}
+    });
+    if (!pieces.length) throw new Error(text.slice(0, 200));
+    var bins = pieces.map(function (part) {
+      var bin = atob(part);
+      var u = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      return u;
+    });
+    return new Blob(bins, { type: wav ? "audio/wav" : "audio/mpeg" });
+  }
+
+  function yandexV3Payload(text, mp3) {
+    var voice = settings.yandexVoice || "alena";
+    var hints = [
+      { voice: voice },
+      { speed: String(clamp(Number(settings.rate) || 1, 0.1, 3)) }
+    ];
+    var role = settings.yandexEmotion || "neutral";
+    var allowed = YANDEX_EMOTIONS[voice] || ["neutral"];
+    if (voice !== "filipp" && allowed.indexOf(role) >= 0) hints.push({ role: role });
+    var payload = {
+      text: String(text || "").slice(0, 4500),
+      hints: hints,
+      loudnessNormalizationType: "LUFS"
+    };
+    if (mp3) payload.outputAudioSpec = { containerAudio: { containerAudioType: "MP3" } };
+    return payload;
+  }
+
+  function yandexPost(key, payload, wav) {
+    var headers = {
+      "Authorization": yandexAuthHeader(key),
+      "Content-Type": "application/json"
+    };
+    if (settings.yandexFolder && !/^AQVN/i.test(key)) headers["x-folder-id"] = settings.yandexFolder;
+    return fetch("https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis", {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      return res.arrayBuffer().then(function (buf) {
+        if (!res.ok) {
+          var msg = "";
+          try { msg = new TextDecoder().decode(buf).slice(0, 180); } catch (err) {}
+          throw new Error("HTTP " + res.status + (msg ? " " + msg : ""));
+        }
+        return yandexChunksToBlob(buf, res.headers.get("content-type"), wav);
+      });
+    });
+  }
+
+  function speakYandex(text) {
+    var key = normalizeYandexKey(settings.yandexKey);
+    if (!key) throw new Error("нет ключа SpeechKit");
+    var chain = yandexPost(key, yandexV3Payload(text, true), false).catch(function (err) {
+      var msg = String(err && err.message ? err.message : err);
+      if (msg.indexOf("Failed to fetch") >= 0 || msg.indexOf("NetworkError") >= 0) throw err;
+      return yandexPost(key, yandexV3Payload(text, false), true);
+    });
+    return chain.then(function (blob) { return playSpeechBlob(blob, text); });
   }
 
   function syncVoiceEngineUi() {
     var eng = $("voiceEngine") ? $("voiceEngine").value : "browser";
     if ($("localVoiceBox")) $("localVoiceBox").hidden = eng !== "local";
     if ($("browserVoiceBox")) $("browserVoiceBox").hidden = eng !== "browser";
-    if ($("yandexVoiceBox")) $("yandexVoiceBox").hidden = eng !== "yandex";
+    if ($("yandexVoiceBox")) $("yandexVoiceBox").hidden = false;
     if ($("ttsCustomWrap") && $("ttsModel")) $("ttsCustomWrap").hidden = $("ttsModel").value !== "custom";
   }
 
@@ -1961,47 +2058,6 @@ function push(user, text) {
     });
   }
 
-  function yandexBody(text, withEmotion) {
-    var body = new URLSearchParams();
-    body.set("text", String(text || "").slice(0, 4500));
-    body.set("lang", "ru-RU");
-    body.set("voice", settings.yandexVoice || "alena");
-    body.set("speed", String(clamp(Number(settings.rate) || 1, 0.1, 3)));
-    body.set("format", "mp3");
-    if (withEmotion && settings.yandexEmotion && settings.yandexEmotion !== "neutral") body.set("emotion", settings.yandexEmotion);
-    else if (withEmotion && settings.yandexEmotion === "neutral" && settings.yandexVoice !== "filipp") body.set("emotion", "neutral");
-    if (settings.yandexFolder) body.set("folderId", settings.yandexFolder);
-    return body;
-  }
-
-  function yandexFetch(text, withEmotion) {
-    return fetch("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", {
-      method: "POST",
-      headers: {
-        "Authorization": yandexAuthHeader(settings.yandexKey),
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: yandexBody(text, withEmotion).toString()
-    }).then(function (res) {
-      if (!res.ok) return res.text().then(function (raw) {
-        throw new Error("HTTP " + res.status + (raw ? " " + raw.slice(0, 180) : ""));
-      });
-      return res.blob();
-    });
-  }
-
-  function speakYandex(text) {
-    if (!String(settings.yandexKey || "").trim()) throw new Error("нет ключа SpeechKit");
-    return yandexFetch(text, true).catch(function (err) {
-      var msg = String(err && err.message ? err.message : err);
-      if (msg.indexOf("Failed to fetch") >= 0 || msg.indexOf("NetworkError") >= 0) throw err;
-      if (msg.indexOf("emotion") < 0 && msg.indexOf("400") < 0) throw err;
-      return yandexFetch(text, false);
-    }).then(function (blob) {
-      return playSpeechBlob(blob, text);
-    });
-  }
-
   async function speak(text) {
     if (!text) return;
     stopTalking();
@@ -2016,7 +2072,7 @@ function push(user, text) {
         log("Локальная модель не ответила (" + (err && err.message ? err.message : err) + "). Говорю голосом браузера.", "err");
       }
     }
-    if (settings.voiceEngine === "yandex") {
+    if (settings.voiceEngine === "yandex" || /^AQVN/i.test(normalizeYandexKey(settings.yandexKey))) {
       try {
         await speakYandex(text);
         return;
