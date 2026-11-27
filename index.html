@@ -435,6 +435,7 @@
           <select id="voiceEngine">
             <option value="browser" selected>Браузер, голоса этого ПК</option>
             <option value="local">Локальный сервер на этом ПК</option>
+            <option value="yandex">Яндекс SpeechKit</option>
           </select>
         </label>
         <div id="browserVoiceBox">
@@ -467,6 +468,36 @@
             <input id="ttsModelCustom" type="text" placeholder="ru_RU-irina-medium" spellcheck="false">
           </label>
           <p class="empty">Сервер на этом компьютере, формат OpenAI: POST /audio/speech. Подходят Piper, Silero через LocalAI или свой мост. Нужны CORS и доступ к localhost.</p>
+        </div>
+        <div id="yandexVoiceBox" hidden>
+          <label class="f">Ключ SpeechKit
+            <input id="yandexKey" type="password" placeholder="Api-Key или IAM-токен" spellcheck="false" autocomplete="off">
+          </label>
+          <label class="f">Каталог, folderId
+            <input id="yandexFolder" type="text" placeholder="нужен для IAM, для сервисного ключа можно пусто" spellcheck="false" autocomplete="off">
+          </label>
+          <label class="f">Голос Яндекса
+            <select id="yandexVoice">
+              <option value="alena">Алёна</option>
+              <option value="filipp">Филипп</option>
+              <option value="jane">Джейн</option>
+              <option value="ermil">Ермил</option>
+              <option value="zahar">Захар</option>
+              <option value="omazh">Омаж</option>
+              <option value="marina">Марина</option>
+              <option value="alexander">Александр</option>
+              <option value="kirill">Кирилл</option>
+              <option value="anton">Антон</option>
+              <option value="dasha">Даша</option>
+              <option value="julia">Юля</option>
+              <option value="lera">Лера</option>
+              <option value="masha">Маша</option>
+            </select>
+          </label>
+          <label class="f">Эмоция
+            <select id="yandexEmotion"></select>
+          </label>
+          <p class="empty">Запрос идёт в SpeechKit v1: tts.api.cloud.yandex.net. Ключ остаётся в браузере. Скорость — общий ползунок.</p>
         </div>
         <label class="f">Скорость <span id="rateVal">1.00</span>
           <input id="rate" type="range" min="0.7" max="1.5" step="0.05" value="1">
@@ -644,6 +675,10 @@ function push(user, text) {
     ttsBase: "http://127.0.0.1:5002/v1",
     ttsModel: "ru_RU-irina-medium",
     ttsModelCustom: "",
+    yandexKey: "",
+    yandexFolder: "",
+    yandexVoice: "alena",
+    yandexEmotion: "neutral",
     personality: "",
     interval: 8,
     economy: true,
@@ -876,10 +911,15 @@ function push(user, text) {
     settings.rate = Number($("rate").value);
     settings.pitch = Number($("pitch").value);
     settings.voiceURI = $("voiceSel").value || "";
-    settings.voiceEngine = $("voiceEngine").value === "local" ? "local" : "browser";
+    var eng = $("voiceEngine").value;
+    settings.voiceEngine = eng === "local" || eng === "yandex" ? eng : "browser";
     settings.ttsBase = ($("ttsBase").value || "").trim() || "http://127.0.0.1:5002/v1";
     settings.ttsModel = $("ttsModel").value || "ru_RU-irina-medium";
     settings.ttsModelCustom = $("ttsModelCustom").value.trim();
+    settings.yandexKey = $("yandexKey").value;
+    settings.yandexFolder = $("yandexFolder").value.trim();
+    settings.yandexVoice = $("yandexVoice").value || "alena";
+    settings.yandexEmotion = $("yandexEmotion").value || "neutral";
     settings.personality = $("personality").value;
     settings.interval = Number($("interval").value) || 8;
     settings.economy = $("economy").checked;
@@ -942,11 +982,17 @@ function push(user, text) {
     $("audioThresh").value = String(settings.audioThresh == null ? 35 : settings.audioThresh);
     $("audioThreshVal").textContent = String($("audioThresh").value);
     $("listenMic").checked = !!settings.listenMic;
-    $("voiceEngine").value = settings.voiceEngine === "local" ? "local" : "browser";
+    var savedEngine = settings.voiceEngine === "local" || settings.voiceEngine === "yandex" ? settings.voiceEngine : "browser";
+    $("voiceEngine").value = savedEngine;
     $("ttsBase").value = settings.ttsBase || "http://127.0.0.1:5002/v1";
     $("ttsModel").value = settings.ttsModel || "ru_RU-irina-medium";
     if (!$("ttsModel").value) $("ttsModel").value = "ru_RU-irina-medium";
     $("ttsModelCustom").value = settings.ttsModelCustom || "";
+    $("yandexKey").value = settings.yandexKey || "";
+    $("yandexFolder").value = settings.yandexFolder || "";
+    $("yandexVoice").value = settings.yandexVoice || "alena";
+    if (!$("yandexVoice").value) $("yandexVoice").value = "alena";
+    fillYandexEmotions(settings.yandexEmotion || "neutral");
     syncVoiceEngineUi();
     hydrating = false;
     gridMode = settings.gridMode === "legacy" ? "legacy" : "v2";
@@ -963,6 +1009,7 @@ function push(user, text) {
         base: settings.base, key: settings.key, modelSel: settings.modelSel, modelCustom: settings.modelCustom,
         rate: settings.rate, pitch: settings.pitch, voiceURI: settings.voiceURI,
         voiceEngine: settings.voiceEngine, ttsBase: settings.ttsBase, ttsModel: settings.ttsModel, ttsModelCustom: settings.ttsModelCustom,
+        yandexKey: settings.yandexKey, yandexFolder: settings.yandexFolder, yandexVoice: settings.yandexVoice, yandexEmotion: settings.yandexEmotion,
         personality: settings.personality, interval: settings.interval, economy: settings.economy,
         thresh: settings.thresh, mode: settings.mode, script: settings.script, platform: settings.platform,
         banned: settings.banned, readMine: settings.readMine, wsUrl: settings.wsUrl, wsAuto: settings.wsAuto,
@@ -996,7 +1043,7 @@ function push(user, text) {
   function applyPreset(p) {
     if (!p || typeof p !== "object") throw new Error("Файл не похож на пресет");
     var s = p.settings || {};
-    var keys = ["base", "key", "modelSel", "modelCustom", "rate", "pitch", "voiceURI", "voiceEngine", "ttsBase", "ttsModel", "ttsModelCustom", "personality", "interval", "economy", "thresh", "mode", "script", "platform", "banned", "readMine", "wsUrl", "wsAuto", "chromaSens", "chromaBg", "videoUrl", "gridMode", "topic", "audioThresh", "listenMic"];
+    var keys = ["base", "key", "modelSel", "modelCustom", "rate", "pitch", "voiceURI", "voiceEngine", "ttsBase", "ttsModel", "ttsModelCustom", "yandexKey", "yandexFolder", "yandexVoice", "yandexEmotion", "personality", "interval", "economy", "thresh", "mode", "script", "platform", "banned", "readMine", "wsUrl", "wsAuto", "chromaSens", "chromaBg", "videoUrl", "gridMode", "topic", "audioThresh", "listenMic"];
     keys.forEach(function (k) { if (s[k] !== undefined) settings[k] = s[k]; });
     if (p.gridMode === "legacy" || p.gridMode === "v2") settings.gridMode = p.gridMode;
     else if (Array.isArray(p.sprites) && p.sprites.length > 0 && p.sprites.length <= 10 && !p.gridMode && !s.gridMode) settings.gridMode = "legacy";
@@ -1811,11 +1858,92 @@ function push(user, text) {
     return settings.ttsModel || "ru_RU-irina-medium";
   }
 
+  var YANDEX_EMOTIONS = {
+    alena: ["neutral", "good"],
+    filipp: ["neutral"],
+    jane: ["neutral", "good", "evil"],
+    ermil: ["neutral", "good"],
+    zahar: ["neutral", "good"],
+    omazh: ["neutral", "evil"],
+    marina: ["neutral", "friendly", "whisper"],
+    alexander: ["neutral", "good"],
+    kirill: ["neutral", "good", "strict"],
+    anton: ["neutral", "good"],
+    dasha: ["neutral", "good", "friendly"],
+    julia: ["neutral", "strict"],
+    lera: ["neutral", "friendly"],
+    masha: ["good", "strict", "friendly"]
+  };
+  var YANDEX_EMOTION_RU = {
+    neutral: "нейтрально",
+    good: "радостно",
+    evil: "зло",
+    friendly: "дружелюбно",
+    strict: "строго",
+    whisper: "шёпот"
+  };
+
+  function fillYandexEmotions(prefer) {
+    var sel = $("yandexEmotion");
+    if (!sel) return;
+    var voice = ($("yandexVoice") && $("yandexVoice").value) || "alena";
+    var list = YANDEX_EMOTIONS[voice] || ["neutral"];
+    var keep = prefer || sel.value;
+    sel.replaceChildren();
+    list.forEach(function (id) {
+      var o = document.createElement("option");
+      o.value = id;
+      o.textContent = YANDEX_EMOTION_RU[id] || id;
+      sel.appendChild(o);
+    });
+    sel.value = list.indexOf(keep) >= 0 ? keep : list[0];
+  }
+
+  function yandexAuthHeader(raw) {
+    var key = String(raw || "").trim();
+    if (/^(Api-Key|Bearer)\s+/i.test(key)) return key;
+    if (/^(t1\.|eyJ)/.test(key)) return "Bearer " + key;
+    return "Api-Key " + key;
+  }
+
   function syncVoiceEngineUi() {
-    var local = $("voiceEngine") && $("voiceEngine").value === "local";
-    if ($("localVoiceBox")) $("localVoiceBox").hidden = !local;
-    if ($("browserVoiceBox")) $("browserVoiceBox").hidden = !!local;
+    var eng = $("voiceEngine") ? $("voiceEngine").value : "browser";
+    if ($("localVoiceBox")) $("localVoiceBox").hidden = eng !== "local";
+    if ($("browserVoiceBox")) $("browserVoiceBox").hidden = eng !== "browser";
+    if ($("yandexVoiceBox")) $("yandexVoiceBox").hidden = eng !== "yandex";
     if ($("ttsCustomWrap") && $("ttsModel")) $("ttsCustomWrap").hidden = $("ttsModel").value !== "custom";
+  }
+
+  function playSpeechBlob(blob, text) {
+    if (dropSpeech) return Promise.resolve();
+    var url = URL.createObjectURL(blob);
+    return new Promise(function (resolve) {
+      var audio = new Audio(url);
+      ttsAudio = audio;
+      audio.playbackRate = clamp(Number(settings.rate) || 1, 0.7, 1.5);
+      var settled = false;
+      function finish() {
+        if (settled) return;
+        settled = true;
+        isSpeaking = false;
+        mouthTarget = 0;
+        phonemeSeq = [];
+        cooldownUntil = Date.now() + 1500;
+        if (streaming) setStatus("Ожидание");
+        URL.revokeObjectURL(url);
+        if (ttsAudio === audio) ttsAudio = null;
+        resolve();
+      }
+      audio.onended = finish;
+      audio.onerror = finish;
+      audio.onplay = function () {
+        buildPhonemes(text);
+        speechStart = performance.now();
+        isSpeaking = true;
+        setStatus("Говорит");
+      };
+      audio.play().catch(function () { finish(); });
+    });
   }
 
   function speakLocal(text) {
@@ -1829,35 +1957,48 @@ function push(user, text) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return res.blob();
     }).then(function (blob) {
-      if (dropSpeech) return;
-      var url = URL.createObjectURL(blob);
-      return new Promise(function (resolve) {
-        var audio = new Audio(url);
-        ttsAudio = audio;
-        audio.playbackRate = clamp(Number(settings.rate) || 1, 0.7, 1.5);
-        var settled = false;
-        function finish() {
-          if (settled) return;
-          settled = true;
-          isSpeaking = false;
-          mouthTarget = 0;
-          phonemeSeq = [];
-          cooldownUntil = Date.now() + 1500;
-          if (streaming) setStatus("Ожидание");
-          URL.revokeObjectURL(url);
-          if (ttsAudio === audio) ttsAudio = null;
-          resolve();
-        }
-        audio.onended = finish;
-        audio.onerror = finish;
-        audio.onplay = function () {
-          buildPhonemes(text);
-          speechStart = performance.now();
-          isSpeaking = true;
-          setStatus("Говорит");
-        };
-        audio.play().catch(function () { finish(); });
+      return playSpeechBlob(blob, text);
+    });
+  }
+
+  function yandexBody(text, withEmotion) {
+    var body = new URLSearchParams();
+    body.set("text", String(text || "").slice(0, 4500));
+    body.set("lang", "ru-RU");
+    body.set("voice", settings.yandexVoice || "alena");
+    body.set("speed", String(clamp(Number(settings.rate) || 1, 0.1, 3)));
+    body.set("format", "mp3");
+    if (withEmotion && settings.yandexEmotion && settings.yandexEmotion !== "neutral") body.set("emotion", settings.yandexEmotion);
+    else if (withEmotion && settings.yandexEmotion === "neutral" && settings.yandexVoice !== "filipp") body.set("emotion", "neutral");
+    if (settings.yandexFolder) body.set("folderId", settings.yandexFolder);
+    return body;
+  }
+
+  function yandexFetch(text, withEmotion) {
+    return fetch("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", {
+      method: "POST",
+      headers: {
+        "Authorization": yandexAuthHeader(settings.yandexKey),
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: yandexBody(text, withEmotion).toString()
+    }).then(function (res) {
+      if (!res.ok) return res.text().then(function (raw) {
+        throw new Error("HTTP " + res.status + (raw ? " " + raw.slice(0, 180) : ""));
       });
+      return res.blob();
+    });
+  }
+
+  function speakYandex(text) {
+    if (!String(settings.yandexKey || "").trim()) throw new Error("нет ключа SpeechKit");
+    return yandexFetch(text, true).catch(function (err) {
+      var msg = String(err && err.message ? err.message : err);
+      if (msg.indexOf("Failed to fetch") >= 0 || msg.indexOf("NetworkError") >= 0) throw err;
+      if (msg.indexOf("emotion") < 0 && msg.indexOf("400") < 0) throw err;
+      return yandexFetch(text, false);
+    }).then(function (blob) {
+      return playSpeechBlob(blob, text);
     });
   }
 
@@ -1873,6 +2014,19 @@ function push(user, text) {
         return;
       } catch (err) {
         log("Локальная модель не ответила (" + (err && err.message ? err.message : err) + "). Говорю голосом браузера.", "err");
+      }
+    }
+    if (settings.voiceEngine === "yandex") {
+      try {
+        await speakYandex(text);
+        return;
+      } catch (err) {
+        var msg = err && err.message ? err.message : String(err);
+        if (msg.indexOf("Failed to fetch") >= 0 || msg.indexOf("NetworkError") >= 0) {
+          log("Яндекс не пустил запрос из браузера. Ключ верный, но SpeechKit не отдаёт звук напрямую на сайт. Говорю голосом браузера.", "err");
+        } else {
+          log("Яндекс SpeechKit: " + msg + ". Говорю голосом браузера.", "err");
+        }
       }
     }
     if (!window.speechSynthesis) return;
@@ -3555,6 +3709,11 @@ function push(user, text) {
       readSettingsFromDom();
       persistLocal();
     });
+    $("yandexVoice").addEventListener("change", function () {
+      fillYandexEmotions();
+      readSettingsFromDom();
+      persistLocal();
+    });
     $("btnVoices").addEventListener("click", loadVoices);
     $("voiceSel").addEventListener("change", function () {
       settings.voiceURI = $("voiceSel").value;
@@ -3809,6 +3968,7 @@ function push(user, text) {
     renderPoseGrid();
     bind();
     loadLocal();
+    fillYandexEmotions($("yandexEmotion").value || settings.yandexEmotion || "neutral");
     if (!settings.personality) settings.personality = $("personality").value;
     refreshPromptUi();
     resize();
