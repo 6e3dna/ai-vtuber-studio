@@ -1,0 +1,3828 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI VTuber Studio — Пилот 2</title>
+<style>
+  :root {
+    --bg: #0c0e12;
+    --dock: #14181f;
+    --inset: #1b212b;
+    --line: #2c333d;
+    --text: #e6ebf2;
+    --muted: #8b97a6;
+    --accent: #ff4d3a;
+    --ok: #3dd68c;
+    --warn: #f0b429;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  #app { display: flex; height: 100vh; height: 100dvh; }
+  #stage {
+    position: relative;
+    flex: 65 1 0;
+    min-width: 0;
+    background: #000;
+    overflow: hidden;
+    user-select: none;
+  }
+  #bgVideo {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+    background: #000;
+  }
+  #stage.chroma { background: #00ff00; }
+  #stage.chroma #bgVideo { opacity: 0; }
+  #scene {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    touch-action: none;
+    cursor: grab;
+  }
+  #scene.calib { cursor: crosshair; }
+  #stageBar {
+    position: absolute;
+    z-index: 3;
+    left: 0; right: 0; top: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    padding: 8px;
+    background: linear-gradient(to bottom, rgba(8,10,14,.88), rgba(8,10,14,.35) 70%, transparent);
+  }
+  #stageBar .grow { flex: 1 1 160px; min-width: 0; }
+  #videoUrl { flex: 1 1 140px; width: auto; min-width: 0; }
+  #calibHint {
+    position: absolute;
+    z-index: 3;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    background: rgba(12,14,18,.88);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  #obsExit {
+    position: absolute;
+    z-index: 4;
+    top: 8px;
+    right: 8px;
+    display: none;
+  }
+  body.obs #dock, body.obs #stageBar, body.obs #calibHint { display: none !important; }
+  body.obs #stage { flex: 1 1 auto; }
+  body.obs #obsExit { display: inline-flex; }
+  #dock {
+    flex: 35 1 0;
+    min-width: 280px;
+    background: var(--dock);
+    border-left: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  #dockHead {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  #dockHead h1 {
+    margin: 0;
+    font-size: 13px;
+    letter-spacing: .08em;
+    font-weight: 700;
+    flex: 1;
+  }
+  #controls { flex: 1 1 75%; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+  .tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 4px;
+    background: #10141a;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs button {
+    flex: 1;
+    background: transparent;
+    color: var(--muted);
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: 9px 2px;
+    min-height: 36px;
+  }
+  .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+  .panel { padding: 10px 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .panel[hidden] { display: none; }
+  label.f { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+  input[type="text"], input[type="password"], input[type="url"], select, textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 7px 8px;
+    min-height: 34px;
+  }
+  textarea { min-height: 72px; resize: vertical; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row > * { min-width: 0; }
+  .check { display: flex; gap: 8px; align-items: flex-start; color: var(--text); font-size: 13px; }
+  .check input { margin-top: 2px; }
+  button.btn, button.ghost, button.go, button.stop {
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    background: var(--inset);
+    min-height: 34px;
+    padding: 6px 8px;
+  }
+  button.btn:hover, button.ghost:hover { border-color: #4a5564; }
+  button.go {
+    background: #1c7a45;
+    border-color: #1c7a45;
+    color: #fff;
+    font-weight: 700;
+    letter-spacing: .03em;
+    min-height: 44px;
+    width: 100%;
+    position: sticky;
+    bottom: 0;
+  }
+  button.go.live { background: var(--accent); border-color: var(--accent); }
+  button.stop { background: #3a2220; border-color: #6a3330; }
+  .pose-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .pose-grid.g10 { grid-template-columns: repeat(5, 1fr); }
+  .pose-grid.g16 { grid-template-columns: repeat(4, 1fr); }
+  .pose-grid button { padding: 8px 2px; font-size: 11px; position: relative; }
+  .pose-grid button.on { border-color: var(--accent); color: #fff; }
+  .pose-grid button.has::after {
+    content: "";
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+  #smileBox {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--inset);
+  }
+  #smileBox p { margin: 0; }
+  .modes { display: flex; gap: 12px; }
+  #chatList {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    min-height: 72px;
+    max-height: 140px;
+    overflow: auto;
+    padding: 6px;
+  }
+  .chat-row { margin: 0 0 4px; }
+  .chat-row b { color: var(--warn); font-weight: 650; }
+  .empty { color: var(--muted); }
+  #logs {
+    flex: 0 0 25%;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--line);
+    background: #0c0f14;
+  }
+  #logHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  #logBody {
+    flex: 1;
+    overflow: auto;
+    padding: 0 8px 8px;
+    font: 12px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  .ll { overflow-wrap: anywhere; margin: 0 0 2px; }
+  .ll .tm { color: #66707c; margin-right: 6px; }
+  .ll.err { color: #ff8d7d; }
+  .ll.ai { color: #b6f3d2; }
+  .ll.skip { color: #f0d48a; }
+  .ll.meta { color: #9eb0c4; }
+  #statusPill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 99px;
+    background: rgba(0,0,0,.45);
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  #statusPill[data-state="Думает"] { color: var(--warn); }
+  #statusPill[data-state="Говорит"] { color: var(--ok); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
+  #statusPill[data-state="Говорит"] .dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  #volMeter {
+    display: inline-block;
+    width: 58px;
+    height: 8px;
+    margin-left: 4px;
+    background: #1b212b;
+    border: 1px solid #2c333d;
+    border-radius: 99px;
+    overflow: hidden;
+    vertical-align: middle;
+  }
+  #volFill { display: block; height: 100%; width: 0%; background: var(--ok); }
+  #volFill.hot { background: var(--accent); }
+  .stat b { color: var(--text); font-weight: 650; }
+  h2 { margin: 4px 0 0; font-size: 14px; }
+  h3 { margin: 8px 0 0; font-size: 13px; }
+  .guide p, .guide li { margin: 0 0 6px; }
+  .guide ol, .guide ul { margin: 0; padding-left: 18px; }
+  pre.snip {
+    margin: 0;
+    padding: 8px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: auto;
+    font: 11px/1.4 ui-monospace, Consolas, monospace;
+    white-space: pre-wrap;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #343b46; border-radius: 99px; }
+  @media (max-width: 900px) {
+    html, body { overflow-x: hidden; overflow-y: auto; height: auto; }
+    #app { flex-direction: column; height: auto; min-height: 100dvh; }
+    #stage { flex: none; width: 100%; height: 62vh; }
+    #dock { flex: none; width: 100%; min-width: 0; min-height: 80vh; border-left: 0; border-top: 1px solid var(--line); }
+    #logs { flex-basis: 220px; }
+    #stageBar {
+      flex-direction: column;
+      align-items: stretch;
+      max-height: 48%;
+      overflow: auto;
+      background: rgba(8, 10, 14, 0.92);
+    }
+    #stageBar .btn,
+    #stageBar .check,
+    #videoUrl,
+    #statusPill,
+    #stageBar .stat,
+    #stageBar .row {
+      width: 100%;
+      max-width: 100%;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #statusPill[data-state="Говорит"] .dot { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <section id="stage" aria-label="Сцена эфира">
+    <video id="bgVideo" muted playsinline autoplay loop></video>
+    <canvas id="scene" width="960" height="540"></canvas>
+    <div id="stageBar">
+      <span id="statusPill" data-state="Ожидание"><span class="dot"></span><span id="statusText">Ожидание</span></span>
+      <span class="stat">Вход <b id="tokIn">0</b> · Выход <b id="tokOut">0</b></span>
+      <span class="stat">Сэкономлено <b id="tokSave">0</b></span>
+      <span class="stat" id="volWrap">Звук <b id="volVal">0</b><span id="volMeter" aria-hidden="true"><span id="volFill"></span></span></span>
+      <span class="stat" id="charMode">Демо</span>
+      <button type="button" class="btn" id="btnObs">🎥 Режим OBS</button>
+      <label class="check"><input type="checkbox" id="chkChroma"> Хромакей фон (#00FF00)</label>
+      <input id="videoUrl" type="url" placeholder="Прямая ссылка на видео (mp4 / webm)" autocomplete="off">
+      <button type="button" class="btn" id="btnApplyVideo">Пуск видео</button>
+      <button type="button" class="btn" id="btnCapture">📺 Захватить окно/экран</button>
+      <span class="row">
+        <button type="button" class="btn" id="btnScaleMinus" aria-label="Уменьшить">−</button>
+        <span id="scaleLabel">108%</span>
+        <button type="button" class="btn" id="btnScalePlus" aria-label="Увеличить">+</button>
+      </span>
+    </div>
+    <div id="calibHint" hidden>Клик — точка рта</div>
+    <button type="button" class="btn" id="obsExit" hidden>Показать панель</button>
+  </section>
+  <aside id="dock">
+    <div id="dockHead">
+      <h1>СТУДИЯ ЭФИРА · ПИЛОТ 2</h1>
+      <button type="button" class="ghost" id="btnDownloadPilot">⬇ Скачать Пилот 1 (.zip)</button>
+      <button type="button" class="ghost" id="btnExport">💾 Экспорт пресета (.json)</button>
+      <button type="button" class="ghost" id="btnImport">📂 Импорт пресета</button>
+      <input id="importFile" type="file" accept="application/json,.json" hidden>
+    </div>
+    <div id="controls">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="1">1. Персонаж</button>
+        <button type="button" class="tab" data-tab="2">2. API</button>
+        <button type="button" class="tab" data-tab="3">3. Мозг</button>
+        <button type="button" class="tab" data-tab="4">4. Чат</button>
+        <button type="button" class="tab" data-tab="5">5. Гайд</button>
+      </div>
+      <div class="panel" data-panel="1">
+        <h2>Персонаж</h2>
+        <p class="empty">Жёлтый ведущий уже на сцене. Кадры персонажа — без губ. Губы — отдельный лист: студия сама подгоняет их по размеру и ставит на лицо. Перетаскивание мышкой, масштаб — колесо или кнопки +/−.</p>
+        <label class="f">Сетка поз
+          <select id="gridMode">
+            <option value="v2" selected>4×4 — 16 поз</option>
+            <option value="legacy">5×2 — 10 поз (старые пресеты)</option>
+          </select>
+        </label>
+        <label class="f" id="gridFileLabel">Сетка 4×4 (16 поз слева направо, сверху вниз)
+          <input id="fileGrid" type="file" accept="image/*">
+        </label>
+        <label class="f" id="spriteFileLabel">Или отдельные файлы по порядку поз
+          <input id="fileSprites" type="file" accept="image/*" multiple>
+        </label>
+        <label class="f">Чувствительность хромакея <span id="chromaVal">42</span>
+          <input id="chromaSens" type="range" min="0" max="100" value="42">
+        </label>
+        <label class="f" id="lipFileLabel">Лист губ той же сеткой (только губы, тот же порядок)
+          <input id="fileLips" type="file" accept="image/*">
+        </label>
+        <div class="row">
+          <button type="button" class="btn" id="btnAutoMap">Умная авто-разметка</button>
+          <button type="button" class="btn" id="btnCopyPrompt">Промпт персонажа</button>
+          <button type="button" class="btn" id="btnCopyLipPrompt">Промпт губ</button>
+        </div>
+        <label class="check"><input type="checkbox" id="chkCalib"> Режим калибровки рта</label>
+        <div id="smileBox">
+          <p class="empty" id="smilePose">Улыбка кадра «Покой»</p>
+          <label class="f">Ширина губ <span id="smileWVal">16%</span>
+            <input id="smileW" type="range" min="8" max="48" step="1" value="16">
+          </label>
+          <label class="f">Высота области рта <span id="smileHVal">11%</span>
+            <input id="smileH" type="range" min="5" max="30" step="1" value="11">
+          </label>
+          <label class="f">Изгиб улыбки <span id="smileCVal">ровно</span>
+            <input id="smileC" type="range" min="-100" max="100" step="1" value="0">
+          </label>
+          <p class="empty">Ползунки меняют только выбранный кадр. Промпт генерации берёт ширину и высоту с «Покой» и прописывает изгиб каждой позы.</p>
+        </div>
+        <div class="pose-grid g16" id="poseGrid"></div>
+        <details>
+          <summary>Текст промптов (Grok / Flux)</summary>
+          <p class="empty">Персонаж без губ</p>
+          <textarea id="genPrompt" readonly rows="6"></textarea>
+          <p class="empty">Отдельные губы на каждый кадр</p>
+          <textarea id="genLipPrompt" readonly rows="6"></textarea>
+        </details>
+      </div>
+      <div class="panel" data-panel="2" hidden>
+        <h2>API и голос</h2>
+        <label class="f">Base URL
+          <input id="apiBase" type="url" value="https://api.teamorouter.com/v1" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="f">API Key
+          <span class="row">
+            <input id="apiKey" type="password" autocomplete="off" spellcheck="false">
+            <button type="button" class="btn" id="btnToggleKey">Показать</button>
+          </span>
+        </label>
+        <label class="f">Модель
+          <select id="modelSel">
+            <option value="deepseek-flash-free" selected>deepseek-flash-free (тест)</option>
+            <option value="deepseek-flash-1017">deepseek-flash-1017 (эфир)</option>
+            <option value="custom">Свой ID модели</option>
+          </select>
+        </label>
+        <label class="f" id="customWrap" hidden>ID модели
+          <input id="modelCustom" type="text" placeholder="например deepseek-flash-free" spellcheck="false">
+        </label>
+        <button type="button" class="btn" id="btnTestApi">Тест API</button>
+        <label class="f">Движок голоса
+          <select id="voiceEngine">
+            <option value="browser" selected>Браузер, голоса этого ПК</option>
+            <option value="local">Локальный сервер на этом ПК</option>
+          </select>
+        </label>
+        <div id="browserVoiceBox">
+          <label class="f">Голос системы
+            <span class="row">
+              <select id="voiceSel"></select>
+              <button type="button" class="btn" id="btnVoices">Обновить</button>
+            </span>
+          </label>
+          <p class="empty">Это голоса Windows и браузера. Если русского нет: Параметры → Время и язык → Речь.</p>
+        </div>
+        <div id="localVoiceBox" hidden>
+          <label class="f">Адрес локального TTS
+            <input id="ttsBase" type="url" value="http://127.0.0.1:5002/v1" spellcheck="false" autocomplete="off">
+          </label>
+          <label class="f">Локальная модель
+            <select id="ttsModel">
+              <option value="ru_RU-irina-medium">Piper · Ирина</option>
+              <option value="ru_RU-ruslan-medium">Piper · Руслан</option>
+              <option value="ru_RU-denis-medium">Piper · Денис</option>
+              <option value="aidar">Silero · Айдар</option>
+              <option value="baya">Silero · Бая</option>
+              <option value="kseniya">Silero · Ксения</option>
+              <option value="xenia">Silero · Ксения 2</option>
+              <option value="eugene">Silero · Евгений</option>
+              <option value="custom">Свой id модели</option>
+            </select>
+          </label>
+          <label class="f" id="ttsCustomWrap" hidden>ID модели
+            <input id="ttsModelCustom" type="text" placeholder="ru_RU-irina-medium" spellcheck="false">
+          </label>
+          <p class="empty">Сервер на этом компьютере, формат OpenAI: POST /audio/speech. Подходят Piper, Silero через LocalAI или свой мост. Нужны CORS и доступ к localhost.</p>
+        </div>
+        <label class="f">Скорость <span id="rateVal">1.00</span>
+          <input id="rate" type="range" min="0.7" max="1.5" step="0.05" value="1">
+        </label>
+        <label class="f">Высота тона <span id="pitchVal">1.00</span>
+          <input id="pitch" type="range" min="0.6" max="1.4" step="0.05" value="1">
+        </label>
+        <div class="row">
+          <button type="button" class="btn" id="btnTestVoice">🔊 Тест голоса</button>
+          <button type="button" class="stop" id="btnStopVoice">🤫 Стоп речь</button>
+        </div>
+      </div>
+      <div class="panel" data-panel="3" hidden>
+        <h2>Мозг и правила</h2>
+        <label class="f">Характер персонажа
+          <textarea id="personality" rows="4">Саркастичный диванный эксперт из Спрингфилда. Шутит коротко — 1–2 предложения. Говорит по-русски, без нравоучений.</textarea>
+        </label>
+        <label class="f">Тема / Контекст ролика
+          <textarea id="topic" rows="2" placeholder="О чём ролик и что ведущий уже знает"></textarea>
+        </label>
+        <label class="f">Порог аудио-триггера <span id="audioThreshVal">35</span>
+          <input id="audioThresh" type="range" min="5" max="80" step="1" value="35">
+        </label>
+        <label class="check"><input type="checkbox" id="listenMic"> Дополнительно слушать микрофон</label>
+        <p class="empty">Речь из захваченного окна расшифровывается сама: в окне захвата включите звук вкладки. Галочка нужна только если говорите в микрофон.</p>
+        <p class="empty" id="memView">Память сюжета пуста.</p>
+        <label class="f">Интервал взгляда (сек) <span id="intervalVal">8</span>
+          <input id="interval" type="range" min="3" max="20" step="1" value="8">
+        </label>
+        <label class="check"><input type="checkbox" id="economy" checked> Умная экономия (Pixel Diff)</label>
+        <label class="f">Порог движения % <span id="threshVal">5</span>
+          <input id="diffThresh" type="range" min="1" max="30" step="1" value="5">
+        </label>
+        <button type="button" class="btn" id="btnNow">⚡ Прокомментировать сейчас</button>
+        <div class="modes">
+          <label class="check"><input type="radio" name="mode" id="modeImprov" value="improv" checked> Импровизация</label>
+          <label class="check"><input type="radio" name="mode" id="modeScript" value="script"> По сценарию</label>
+        </div>
+        <label class="f">План стрима
+          <textarea id="script" rows="5" placeholder="1. Приветствие&#10;2. Разбор кадра&#10;3. Ответы чату"></textarea>
+        </label>
+        <label class="check"><input type="checkbox" id="platformRules" checked> Правила площадок (VK Видео / Rutube: запрет политики, оскорблений, банвордов)</label>
+        <label class="f">Мои запретные темы
+          <textarea id="banned" rows="2" placeholder="Например: конкуренты, личные данные клиентов"></textarea>
+        </label>
+      </div>
+      <div class="panel" data-panel="4" hidden>
+        <h2>Чат и стриминг</h2>
+        <label class="check"><input type="checkbox" id="readMine" checked> Читать мои сообщения</label>
+        <label class="f">Сообщение оператора
+          <span class="row">
+            <input id="myMsg" type="text" placeholder="Напиши реплику зрителю или себе" autocomplete="off">
+            <button type="button" class="btn" id="btnSend">Отправить</button>
+          </span>
+        </label>
+        <button type="button" class="btn" id="btnThrow">🎲 Тестовый вброс из чата</button>
+        <div id="chatList"><div class="empty">Пока тихо.</div></div>
+        <label class="f">WebSocket-мост (VK Видео / Rutube)
+          <input id="wsUrl" type="text" value="ws://localhost:8765" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="check"><input type="checkbox" id="wsAuto" checked> Подключать мост при старте стрима (авто-переподключение)</label>
+        <p class="empty">Мост принимает JSON <code>{"user":"...","text":"..."}</code>. Буфер — 5 последних уникальных сообщений. Как поднять мост — во вкладке «Гайд».</p>
+        <button type="button" class="go" id="btnStream">▶ ЗАПУСТИТЬ СТРИМ</button>
+      </div>
+      <div class="panel guide" data-panel="5" hidden>
+        <h2>Как выйти в эфир</h2>
+        <h3>1. Персонаж</h3>
+        <p>Можно сразу вести эфир на встроенном жёлтом ведущем. Чтобы заменить его:</p>
+        <ol>
+          <li>Скопируйте «Промпт персонажа» и сгенерируйте сетку без губ: на месте рта гладкая кожа.</li>
+          <li>Скопируйте «Промпт губ» и сгенерируйте второй лист: только губы, тот же порядок и цифры.</li>
+          <li>Загрузите оба листа. Студия снимет зелёный фон, обрежет губы и сама поставит их на лицо в ширину ползунка.</li>
+          <li>Нужна сетка 4×4 (16 поз) или старая 5×2. Переключатель сетки стоит над загрузкой. В углу кадра — цифра.</li>
+          <li>Загрузите сетку или файлы. Ползунком уберите зелёный фон и зелёную кайму.</li>
+          <li>Нажмите «Умная авто-разметка» — уйдёт один коллаж, модель вернёт, какая цифра какой позе соответствует.</li>
+          <li>Включите калибровку и кликните центр губ на каждом кадре. Ширину, высоту и изгиб улыбки задайте ползунками — у каждого фото они свои. Красная дуга показывает размер.</li>
+        </ol>
+        <h3>2. Голос в Edge</h3>
+        <ol>
+          <li>Windows: Параметры → Время и язык → Речь → добавить русский.</li>
+          <li>Edge: edge://settings/languages — русский в списке языков.</li>
+          <li>Во вкладке API выберите Microsoft Dmitry (приоритет) или любой ru-RU. Скорость 0.7–1.5, тон 0.6–1.4. Проверьте кнопкой «Тест голоса».</li>
+        </ol>
+        <h3>3. Мозг</h3>
+        <p>Ключ TeamoRouter, база <code>https://api.teamorouter.com/v1</code>. Для проверки — <code>deepseek-flash-free</code>, для эфира — <code>deepseek-flash-1017</code>. В запрос всегда уходят temperature 0.7, max_tokens 180 и thinking disabled. Системный промпт статичный, в пользовательском сообщении — кадр 448×252 JPEG 0.55, три строки памяти сюжета, распознанная речь и новые реплики чата. Очередь: чат, затем скачок звука или сильный сдвиг кадра, затем таймер. При 429 студия ждёт 10 секунд. Если модель не умеет картинки (400), эфир продолжается текстом.</p>
+        <h3>4. OBS</h3>
+        <ol>
+          <li>Источник: захват окна браузера со студией или захват экрана.</li>
+          <li>Для хромакея персонажа включите «Хромакей фон» — сцена станет #00FF00, видео подложка спрячется (анализ кадра при этом читает видео, если оно запущено).</li>
+          <li>«Режим OBS» прячет пульт. Вернуть: Esc или кнопка в углу.</li>
+          <li>Фильтр Color Key в OBS: зелёный #00FF00, подобрать Similarity.</li>
+        </ol>
+        <h3>5. Чат VK Видео / Rutube</h3>
+        <p>Браузер сам в чат площадки не заходит. На компьютере нужен мост: программа читает чат и шлёт строки в WebSocket. Студия переподключается сама, пока стрим включён и галочка моста стоит.</p>
+        <pre class="snip">// chat-bridge.mjs
+// npm i ws && node chat-bridge.mjs
+import { WebSocketServer } from "ws";
+const wss = new WebSocketServer({ port: 8765 });
+function push(user, text) {
+  const data = JSON.stringify({ user, text });
+  for (const c of wss.clients) c.send(data);
+}
+// Дальше вызывайте push(имя, текст) из API чата VK Видео или Rutube.</pre>
+        <p>Без моста проверьте реакцию кнопкой «Тестовый вброс» и своими сообщениями. Настройки и точки рта лежат в браузере и в файле пресета.</p>
+      </div>
+    </div>
+    <div id="logs">
+      <div id="logHead"><span>Живые логи</span><button type="button" class="ghost" id="btnClearLog">Очистить</button></div>
+      <div id="logBody" aria-live="polite"></div>
+    </div>
+  </aside>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var ACTIONS_10 = ["idle", "walk", "sit", "laugh", "angry", "shock", "point", "facepalm", "think", "dance"];
+  var ACTIONS_16 = ["idle", "talk", "laugh", "think", "shock", "angry", "sad", "point", "facepalm", "hype", "sip", "cringe", "smug", "sleepy", "love", "confused"];
+  var ACTIONS = ACTIONS_16.slice();
+  var gridMode = "v2";
+  var ACTION_RU = {
+    idle: "Покой", walk: "Шаг", sit: "Сидит", laugh: "Смех", angry: "Злость",
+    shock: "Шок", point: "Указ", facepalm: "Рукалицо", think: "Думает", dance: "Танец",
+    talk: "Речь", sad: "Грусть", hype: "Хайп", sip: "Глоток", cringe: "Кринж",
+    smug: "Ухмылка", sleepy: "Сон", love: "Любовь", confused: "Непонял"
+  };
+  var LS_KEY = "ai-vtuber-studio-v1";
+  var DEFAULT_BASE = "https://api.teamorouter.com/v1";
+  var SYSTEM_PROMPT = [
+    "Ты режиссёр 2D-стримера. Верни СТРОГО один JSON-объект без markdown и без пояснений.",
+    '{"pose":"idle","say":"фраза","summary":"кратко что произошло"}',
+    "pose — ровно одна поза из списка в сообщении пользователя.",
+    "say — живая реплика на русском, 1 или 2 коротких предложения, без эмодзи.",
+    "summary — 4-6 слов о том, что произошло в сцене.",
+    "Если реакция сильная, можно добавить move_to (left|center|right|stay) и zoom (true или false)."
+  ].join("\n");
+  var POSE_HINT = {
+    idle: "стоит спокойно",
+    talk: "говорит",
+    walk: "шаг в сторону",
+    sit: "сидит",
+    laugh: "смеётся",
+    think: "думает, пальцы у щеки, губы закрыты и видны",
+    shock: "шок, руки вверх",
+    angry: "злится, кулаки",
+    sad: "грустит",
+    point: "указывает рукой",
+    facepalm: "ладонь у щеки, рот полностью виден",
+    dance: "танцует",
+    hype: "восторг, руки вверх",
+    sip: "кружка рядом со ртом, губы полностью видны",
+    cringe: "плечи сжаты",
+    smug: "самодовольный вид",
+    sleepy: "засыпает",
+    love: "руки у сердца",
+    confused: "не понимает"
+  };
+
+  var SKIN = "#ffd23a";
+  var OUT = "#1a1a1a";
+  var HAIR = "#5c3b2a";
+  var SHIRT = "#f4f1ea";
+  var PANTS = "#3a4f86";
+  var SHOE = "#22252b";
+
+  var settings = {
+    base: DEFAULT_BASE,
+    key: "",
+    modelSel: "deepseek-flash-free",
+    modelCustom: "",
+    rate: 1,
+    pitch: 1,
+    voiceURI: "",
+    voiceEngine: "browser",
+    ttsBase: "http://127.0.0.1:5002/v1",
+    ttsModel: "ru_RU-irina-medium",
+    ttsModelCustom: "",
+    personality: "",
+    interval: 8,
+    economy: true,
+    thresh: 5,
+    mode: "improv",
+    script: "",
+    platform: true,
+    banned: "",
+    readMine: true,
+    wsUrl: "ws://localhost:8765",
+    wsAuto: true,
+    chromaSens: 42,
+    chromaBg: false,
+    videoUrl: "",
+    gridMode: "v2",
+    topic: "",
+    audioThresh: 35,
+    listenMic: false
+  };
+
+  var mouths = {};
+  function defaultSmile(action) {
+    if (action === "laugh" || action === "hype" || action === "love") return 0.65;
+    if (action === "smug") return 0.4;
+    if (action === "sad" || action === "sleepy") return -0.55;
+    if (action === "angry" || action === "cringe") return -0.25;
+    return 0;
+  }
+  function defaultMouth(action) {
+    var spot = { x: 0, y: -66 };
+    if (action === "shock") spot = { x: 0, y: -58 };
+    else if (action === "facepalm") spot = { x: -4, y: -64 };
+    else if (action === "think") spot = { x: -2, y: -70 };
+    else if (action === "laugh") spot = { x: 0, y: -64 };
+    else if (action === "sip") spot = { x: 8, y: -62 };
+    else if (action === "sleepy") spot = { x: 0, y: -60 };
+    return { x: spot.x, y: spot.y, w: 16, h: 11, smile: defaultSmile(action) };
+  }
+  function normMouth(m, action) {
+    var d = defaultMouth(action || "idle");
+    m = m || {};
+    return {
+      x: typeof m.x === "number" ? m.x : d.x,
+      y: typeof m.y === "number" ? m.y : d.y,
+      w: typeof m.w === "number" ? clamp(m.w, 8, 48) : d.w,
+      h: typeof m.h === "number" ? clamp(m.h, 5, 30) : d.h,
+      smile: typeof m.smile === "number" ? clamp(m.smile, -1, 1) : d.smile,
+      manual: m.manual === true
+    };
+  }
+  function smileWord(v) {
+    if (v >= 0.35) return "уголки вверх";
+    if (v <= -0.35) return "уголки вниз";
+    if (v >= 0.12) return "лёгкая улыбка";
+    if (v <= -0.12) return "лёгкая грусть во рту";
+    return "ровная линия губ";
+  }
+  ACTIONS_10.concat(ACTIONS_16).forEach(function (a) {
+    mouths[a] = defaultMouth(a);
+  });
+
+  var spriteMap = {};
+  var viewMap = {};
+  var lipMap = {};
+  var lipView = {};
+  var rawSprites = [];
+  var viewSprites = [];
+  var history = [];
+  var chatBuf = [];
+  var pendingLines = [];
+  var tokensIn = 0;
+  var tokensOut = 0;
+  var savedReqs = 0;
+  var streaming = false;
+  var isBusy = false;
+  var isSpeaking = false;
+  var waitingApi = false;
+  var dropSpeech = false;
+  var epoch = 0;
+  var cooldownUntil = 0;
+  var queued = null;
+  var lastCycleAt = 0;
+  var statusText = "Ожидание";
+  var hydrating = false;
+  var saveTimer = 0;
+  var ws = null;
+  var wsWanted = false;
+  var wsTries = 0;
+  var wsTimer = 0;
+
+  var charXR = 0.5;
+  var charYR = 0.7;
+  var charX = 400;
+  var charY = 400;
+  var charScale = 1.08;
+  var facing = 1;
+  var moveTo = "stay";
+  var desiredAction = "idle";
+  var visualAction = "idle";
+  var lastVisual = "";
+  var walking = false;
+  var dragging = false;
+  var dragDX = 0;
+  var dragDY = 0;
+  var ss = 1;
+  var zoomAmp = 0;
+  var zoomUntil = 0;
+  var animT = 0;
+  var cssW = 1;
+  var cssH = 1;
+  var dpr = 1;
+  var nextBlink = 0;
+  var blinkStart = -9999;
+  var mouthSm = 0;
+  var lipBurstAt = 0;
+  var prevSent = null;
+  var lastGrid = null;
+  var taintedLogged = false;
+  var frameErr = false;
+  var phonemeSeq = [];
+  var boundaryIdx = 0;
+  var boundaryAt = 0;
+  var speechStart = 0;
+  var speechDur = 1200;
+  var mouthTarget = 0;
+  var mouthVel = 0;
+  var rollingMemory = [];
+  var audioTranscript = "";
+  var audioTranscriptInterim = "";
+  var transcriptParts = [];
+  var squashT0 = 0;
+  var squashUntil = 0;
+  var apiWaitPose = "think";
+  var rms = 0;
+  var rmsAvg = 0.02;
+  var lastSpikeAt = 0;
+  var lastDiffProbe = 0;
+  var audioCtx = null;
+  var analyser = null;
+  var audioData = null;
+  var audioSource = null;
+  var rec = null;
+  var warpC = null;
+  var warpB = null;
+  var walkVel = 0;
+  var frameDt = 0.016;
+  var smoothX = 0;
+  var smoothY = 0;
+  var smoothReady = false;
+  var smoothOffY = 0;
+  var facingSm = 1;
+  var limbSm = null;
+  var shownSprite = null;
+  var shownAction = "";
+  var prevSprite = null;
+  var prevAction = "";
+  var poseBlend = 1;
+  var capAudioTrack = null;
+  var mediaRec = null;
+  var clipChunks = [];
+  var recordingSpeech = false;
+  var voicedSince = 0;
+  var quietSince = 0;
+  var clipStarted = 0;
+  var sttBusy = false;
+  var sttModel = "";
+  var sttFailLogged = false;
+  var lastHeard = "";
+  var lastAudioSampleAt = 0;
+
+  var stage, canvas, ctx, video, cap, capCtx, diffC, diffCtx;
+
+  function $(id) { return document.getElementById(id); }
+
+  function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
+  function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+
+  function log(msg, kind) {
+    var body = $("logBody");
+    if (!body) return;
+    var line = document.createElement("div");
+    line.className = "ll " + (kind || "info");
+    var tm = document.createElement("span");
+    tm.className = "tm";
+    tm.textContent = new Date().toLocaleTimeString("ru-RU", { hour12: false });
+    var tx = document.createElement("span");
+    tx.textContent = String(msg);
+    line.appendChild(tm);
+    line.appendChild(tx);
+    body.appendChild(line);
+    while (body.children.length > 160) body.removeChild(body.firstChild);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function setStatus(text) {
+    statusText = text;
+    var pill = $("statusPill");
+    var label = $("statusText");
+    if (pill) pill.dataset.state = text;
+    if (label) label.textContent = text;
+  }
+
+  function renderStats() {
+    $("tokIn").textContent = String(tokensIn);
+    $("tokOut").textContent = String(tokensOut);
+    $("tokSave").textContent = String(savedReqs);
+  }
+
+  function updateScaleLabel() {
+    $("scaleLabel").textContent = Math.round(charScale * 100) + "%";
+  }
+
+  function currentModel() {
+    if (settings.modelSel === "custom") return (settings.modelCustom || "").trim() || "deepseek-flash-free";
+    return settings.modelSel || "deepseek-flash-free";
+  }
+
+  function endpoint() {
+    var b = (settings.base || DEFAULT_BASE).trim().replace(/\/+$/, "");
+    b = b.replace(/\/chat\/completions$/i, "");
+    return b + "/chat/completions";
+  }
+
+  function readSettingsFromDom() {
+    settings.base = $("apiBase").value.trim() || DEFAULT_BASE;
+    settings.key = $("apiKey").value;
+    settings.modelSel = $("modelSel").value;
+    settings.modelCustom = $("modelCustom").value.trim();
+    settings.rate = Number($("rate").value);
+    settings.pitch = Number($("pitch").value);
+    settings.voiceURI = $("voiceSel").value || "";
+    settings.voiceEngine = $("voiceEngine").value === "local" ? "local" : "browser";
+    settings.ttsBase = ($("ttsBase").value || "").trim() || "http://127.0.0.1:5002/v1";
+    settings.ttsModel = $("ttsModel").value || "ru_RU-irina-medium";
+    settings.ttsModelCustom = $("ttsModelCustom").value.trim();
+    settings.personality = $("personality").value;
+    settings.interval = Number($("interval").value) || 8;
+    settings.economy = $("economy").checked;
+    settings.thresh = Number($("diffThresh").value) || 5;
+    settings.mode = $("modeScript").checked ? "script" : "improv";
+    settings.script = $("script").value;
+    settings.platform = $("platformRules").checked;
+    settings.banned = $("banned").value;
+    settings.readMine = $("readMine").checked;
+    settings.wsUrl = $("wsUrl").value.trim() || "ws://localhost:8765";
+    settings.wsAuto = $("wsAuto").checked;
+    settings.chromaSens = Number($("chromaSens").value);
+    settings.chromaBg = $("chkChroma").checked;
+    settings.videoUrl = $("videoUrl").value.trim();
+    settings.gridMode = $("gridMode").value === "legacy" ? "legacy" : "v2";
+    settings.topic = $("topic").value;
+    settings.audioThresh = Number($("audioThresh").value) || 35;
+    settings.listenMic = $("listenMic").checked;
+    if (settings.gridMode !== gridMode) {
+      gridMode = settings.gridMode;
+      ACTIONS = (gridMode === "legacy" ? ACTIONS_10 : ACTIONS_16).slice();
+      renderPoseGrid();
+      refreshPromptUi();
+    }
+  }
+
+  function applySettingsToDom() {
+    hydrating = true;
+    $("apiBase").value = settings.base || DEFAULT_BASE;
+    $("apiKey").value = settings.key || "";
+    $("modelSel").value = settings.modelSel || "deepseek-flash-free";
+    if (!$("modelSel").value) $("modelSel").value = "deepseek-flash-free";
+    $("modelCustom").value = settings.modelCustom || "";
+    $("customWrap").hidden = $("modelSel").value !== "custom";
+    $("rate").value = String(settings.rate || 1);
+    $("pitch").value = String(settings.pitch || 1);
+    $("rateVal").textContent = Number($("rate").value).toFixed(2);
+    $("pitchVal").textContent = Number($("pitch").value).toFixed(2);
+    $("personality").value = settings.personality || $("personality").value;
+    $("interval").value = String(settings.interval || 8);
+    $("intervalVal").textContent = String($("interval").value);
+    $("economy").checked = !!settings.economy;
+    $("diffThresh").value = String(settings.thresh || 5);
+    $("threshVal").textContent = String($("diffThresh").value);
+    $("modeScript").checked = settings.mode === "script";
+    $("modeImprov").checked = settings.mode !== "script";
+    $("script").value = settings.script || "";
+    $("platformRules").checked = settings.platform !== false;
+    $("banned").value = settings.banned || "";
+    $("readMine").checked = settings.readMine !== false;
+    $("wsUrl").value = settings.wsUrl || "ws://localhost:8765";
+    $("wsAuto").checked = settings.wsAuto !== false;
+    $("chromaSens").value = String(settings.chromaSens == null ? 42 : settings.chromaSens);
+    $("chromaVal").textContent = String($("chromaSens").value);
+    $("chkChroma").checked = !!settings.chromaBg;
+    stage.classList.toggle("chroma", !!settings.chromaBg);
+    $("videoUrl").value = settings.videoUrl || "";
+    $("gridMode").value = settings.gridMode === "legacy" ? "legacy" : "v2";
+    $("topic").value = settings.topic || "";
+    $("audioThresh").value = String(settings.audioThresh == null ? 35 : settings.audioThresh);
+    $("audioThreshVal").textContent = String($("audioThresh").value);
+    $("listenMic").checked = !!settings.listenMic;
+    $("voiceEngine").value = settings.voiceEngine === "local" ? "local" : "browser";
+    $("ttsBase").value = settings.ttsBase || "http://127.0.0.1:5002/v1";
+    $("ttsModel").value = settings.ttsModel || "ru_RU-irina-medium";
+    if (!$("ttsModel").value) $("ttsModel").value = "ru_RU-irina-medium";
+    $("ttsModelCustom").value = settings.ttsModelCustom || "";
+    syncVoiceEngineUi();
+    hydrating = false;
+    gridMode = settings.gridMode === "legacy" ? "legacy" : "v2";
+    ACTIONS = (gridMode === "legacy" ? ACTIONS_10 : ACTIONS_16).slice();
+  }
+
+  function collect(withSprites) {
+    readSettingsFromDom();
+    var preset = {
+      version: 2,
+      gridMode: gridMode,
+      actions: ACTIONS.slice(),
+      settings: {
+        base: settings.base, key: settings.key, modelSel: settings.modelSel, modelCustom: settings.modelCustom,
+        rate: settings.rate, pitch: settings.pitch, voiceURI: settings.voiceURI,
+        voiceEngine: settings.voiceEngine, ttsBase: settings.ttsBase, ttsModel: settings.ttsModel, ttsModelCustom: settings.ttsModelCustom,
+        personality: settings.personality, interval: settings.interval, economy: settings.economy,
+        thresh: settings.thresh, mode: settings.mode, script: settings.script, platform: settings.platform,
+        banned: settings.banned, readMine: settings.readMine, wsUrl: settings.wsUrl, wsAuto: settings.wsAuto,
+        chromaSens: settings.chromaSens, chromaBg: settings.chromaBg, videoUrl: settings.videoUrl,
+        gridMode: gridMode, topic: settings.topic, audioThresh: settings.audioThresh, listenMic: settings.listenMic
+      },
+      mouths: mouths,
+      charXR: charXR, charYR: charYR, charScale: charScale
+    };
+    if (withSprites) {
+      preset.sprites = ACTIONS.map(function (a) { return spriteMap[a] ? spriteMap[a].toDataURL("image/png") : null; });
+      preset.lips = ACTIONS.map(function (a) { return lipMap[a] ? lipMap[a].toDataURL("image/png") : null; });
+    }
+    return preset;
+  }
+
+  function persistLocal() {
+    if (hydrating) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, 220);
+  }
+
+  function saveNow() {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(collect(false)));
+    } catch (err) {
+      log("Не удалось записать localStorage", "err");
+    }
+  }
+
+  function applyPreset(p) {
+    if (!p || typeof p !== "object") throw new Error("Файл не похож на пресет");
+    var s = p.settings || {};
+    var keys = ["base", "key", "modelSel", "modelCustom", "rate", "pitch", "voiceURI", "voiceEngine", "ttsBase", "ttsModel", "ttsModelCustom", "personality", "interval", "economy", "thresh", "mode", "script", "platform", "banned", "readMine", "wsUrl", "wsAuto", "chromaSens", "chromaBg", "videoUrl", "gridMode", "topic", "audioThresh", "listenMic"];
+    keys.forEach(function (k) { if (s[k] !== undefined) settings[k] = s[k]; });
+    if (p.gridMode === "legacy" || p.gridMode === "v2") settings.gridMode = p.gridMode;
+    else if (Array.isArray(p.sprites) && p.sprites.length > 0 && p.sprites.length <= 10 && !p.gridMode && !s.gridMode) settings.gridMode = "legacy";
+    gridMode = settings.gridMode === "legacy" ? "legacy" : "v2";
+    ACTIONS = (gridMode === "legacy" ? ACTIONS_10 : ACTIONS_16).slice();
+    if (p.mouths) {
+      Object.keys(p.mouths).forEach(function (a) {
+        var m = p.mouths[a];
+        if (m && typeof m.x === "number" && typeof m.y === "number") {
+          var fitted = normMouth(m, a);
+          var spot = defaultMouth(a);
+          if (m.manual === true || Math.round(m.x) !== spot.x || Math.round(m.y) !== spot.y) fitted.manual = true;
+          mouths[a] = fitted;
+        }
+      });
+    }
+    if (typeof p.charXR === "number") charXR = p.charXR;
+    if (typeof p.charYR === "number") charYR = p.charYR;
+    if (typeof p.charScale === "number") charScale = clamp(p.charScale, 0.35, 2.8);
+    applySettingsToDom();
+    updateScaleLabel();
+    if (settings.voiceURI) {
+      var sel = $("voiceSel");
+      if (sel) sel.value = settings.voiceURI;
+    }
+    resize();
+    renderPoseGrid();
+    refreshPromptUi();
+    if (Array.isArray(p.sprites)) {
+      var names = Array.isArray(p.actions) && p.actions.length === p.sprites.length
+        ? p.actions
+        : (p.sprites.length <= 10 ? ACTIONS_10 : ACTIONS_16);
+      loadSpriteDataUrls(p.sprites, names);
+    }
+    if (Array.isArray(p.lips)) {
+      loadLipDataUrls(p.lips, Array.isArray(p.actions) && p.actions.length === p.lips.length ? p.actions : ACTIONS.slice());
+    }
+    if (settings.listenMic) startListen();
+    else stopListen();
+    persistLocal();
+  }
+
+  function loadLocal() {
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      applyPreset(JSON.parse(raw));
+      log("Настройки восстановлены", "meta");
+    } catch (err) {
+      log("Сохранённые настройки пропущены", "skip");
+    }
+  }
+
+  function downloadPilot() {
+    var path = "/";
+    var origin = window.location.origin;
+    try {
+      path = window.parent.location.pathname || "/";
+      origin = window.parent.location.origin || origin;
+    } catch (e) { /* same origin expected */ }
+    var prefix = (path.match(/^\/hds-[a-z0-9]+-\d+-[a-z0-9]+/i) || [""])[0];
+    var url = origin + prefix + "/pilot-1-studio.zip";
+    log("Скачивание архива Пилот 1…", "info");
+    fetch(url).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.blob();
+    }).then(function (blob) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "pilot-1-studio.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+      log("Архив Пилот 1 отдан в загрузки браузера", "ok");
+    }).catch(function () {
+      log("Не удалось скачать. Откройте " + url, "err");
+      window.open(url, "_blank");
+    });
+  }
+
+  function exportPreset() {
+    var blob = new Blob([JSON.stringify(collect(true))], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "vtuber-preset.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+    log("Пресет экспортирован", "ai");
+  }
+
+  function readFileText(file) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onerror = function () { reject(new Error("Не прочитан файл")); };
+      fr.onload = function () { resolve(String(fr.result || "")); };
+      fr.readAsText(file);
+    });
+  }
+
+  function readImageFile(file) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onerror = function () { reject(new Error("Не прочитан файл")); };
+      fr.onload = function () {
+        var img = new Image();
+        img.onload = function () { resolve(img); };
+        img.onerror = function () { reject(new Error("Это не изображение")); };
+        img.src = String(fr.result || "");
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function dataUrlToImage(url) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { reject(new Error("кадр")); };
+      img.src = url;
+    });
+  }
+
+  function imageToCanvas(img, maxH) {
+    var scale = Math.min(1, (maxH || 900) / img.height, 1600 / img.width);
+    var c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(img.width * scale));
+    c.height = Math.max(1, Math.round(img.height * scale));
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    var max = Math.max(r, g, b);
+    var min = Math.min(r, g, b);
+    var h = 0;
+    var s = 0;
+    var l = (max + min) / 2;
+    var d = max - min;
+    if (d !== 0) {
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = ((g - b) / d) % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    return [h, s, l];
+  }
+
+  function applyChroma(src) {
+    var w = src.width;
+    var h = src.height;
+    var c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    var x = c.getContext("2d", { willReadFrequently: true });
+    x.drawImage(src, 0, 0);
+    var img = x.getImageData(0, 0, w, h);
+    var d = img.data;
+    var sens = Number(settings.chromaSens);
+    if (isNaN(sens)) sens = 42;
+    var hueTol = 12 + sens * 0.55;
+    var satMin = Math.max(0.08, 0.38 - sens * 0.0025);
+    var i, r, g, b, hsl, dh, greenish, edge, maxRB, spill, keep;
+    for (i = 0; i < d.length; i += 4) {
+      r = d[i]; g = d[i + 1]; b = d[i + 2];
+      hsl = rgbToHsl(r, g, b);
+      dh = Math.abs(hsl[0] - 120);
+      if (dh > 180) dh = 360 - dh;
+      greenish = g > 60 && g > r * 1.12 && g > b * 1.12;
+      if (greenish && dh < hueTol && hsl[1] > satMin && hsl[2] > 0.08 && hsl[2] < 0.97) {
+        edge = dh / hueTol;
+        d[i + 3] = edge > 0.72 ? Math.round(255 * (edge - 0.72) / 0.28) : 0;
+        if (d[i + 3] < 10) d[i + 3] = 0;
+      }
+      maxRB = Math.max(r, b);
+      if (d[i + 3] > 0 && g > maxRB) {
+        spill = g - maxRB;
+        var strength = 0.78 + (Math.min(100, Math.max(0, sens)) / 100) * 0.2;
+        d[i + 1] = Math.max(0, Math.round(maxRB + spill * (1 - strength)));
+        if (spill > 16) {
+          var fade = Math.min(0.55, spill / 160);
+          d[i + 3] = Math.round(d[i + 3] * (1 - fade));
+          if (d[i + 3] < 8) d[i + 3] = 0;
+        }
+      }
+    }
+    x.putImageData(img, 0, 0);
+    return c;
+  }
+
+  function alphaBox(canvas) {
+    var w = canvas.width;
+    var h = canvas.height;
+    var d = canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    var minX = w;
+    var minY = h;
+    var maxX = -1;
+    var maxY = -1;
+    var y, i;
+    for (y = 0; y < h; y += 2) {
+      for (i = 0; i < w; i += 2) {
+        if (d[(y * w + i) * 4 + 3] > 24) {
+          if (i < minX) minX = i;
+          if (i > maxX) maxX = i;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return null;
+    return { x: minX, y: minY, w: Math.max(1, maxX - minX + 2), h: Math.max(1, maxY - minY + 2) };
+  }
+
+  function trimAlpha(canvas) {
+    var box = alphaBox(canvas);
+    if (!box) return canvas;
+    var c = document.createElement("canvas");
+    c.width = box.w;
+    c.height = box.h;
+    c.getContext("2d").drawImage(canvas, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+    return c;
+  }
+
+  function greenPixel(r, g, b) {
+    return g > 70 && g > r + 18 && g > b + 18;
+  }
+
+  function gutterCuts(canvas, axis, parts) {
+    var w = canvas.width;
+    var h = canvas.height;
+    var data = canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    var len = axis === "x" ? w : h;
+    var other = axis === "x" ? h : w;
+    var step = Math.max(1, Math.floor(len / 280));
+    var sample = Math.max(1, Math.floor(other / 48));
+    var scores = [];
+    var p, q, x, y, i, green, n;
+    for (p = 0; p < len; p += step) {
+      green = 0;
+      n = 0;
+      for (q = 0; q < other; q += sample) {
+        x = axis === "x" ? p : q;
+        y = axis === "x" ? q : p;
+        i = (y * w + x) * 4;
+        n += 1;
+        if (greenPixel(data[i], data[i + 1], data[i + 2])) green += 1;
+      }
+      scores.push({ p: p, g: n ? green / n : 0 });
+    }
+    var cuts = [];
+    var run = -1;
+    for (i = 0; i < scores.length; i++) {
+      if (scores[i].g > 0.78) {
+        if (run < 0) run = i;
+      } else if (run >= 0) {
+        var a = scores[run].p;
+        var b = scores[i - 1].p;
+        if (b - a > len * 0.008) cuts.push((a + b) / 2);
+        run = -1;
+      }
+    }
+    var inner = cuts.filter(function (c) { return c > len * 0.05 && c < len * 0.95; });
+    if (inner.length < parts - 1) return null;
+    if (inner.length === parts - 1) return inner;
+    var chosen = [];
+    for (var k = 1; k < parts; k++) {
+      var want = len * k / parts;
+      var best = inner[0];
+      var bestD = 1e9;
+      inner.forEach(function (c) {
+        if (chosen.indexOf(c) >= 0) return;
+        var d = Math.abs(c - want);
+        if (d < bestD) { bestD = d; best = c; }
+      });
+      chosen.push(best);
+    }
+    chosen.sort(function (a, b) { return a - b; });
+    return chosen;
+  }
+
+  function cutGrid(base) {
+    var cols = gridMode === "legacy" ? 5 : 4;
+    var rows = gridMode === "legacy" ? 2 : 4;
+    var xs = gutterCuts(base, "x", cols);
+    var ys = gutterCuts(base, "y", rows);
+    var xBounds = xs ? [0].concat(xs, [base.width]) : null;
+    var yBounds = ys ? [0].concat(ys, [base.height]) : null;
+    if (!xBounds) {
+      xBounds = [];
+      for (var c = 0; c <= cols; c++) xBounds.push(base.width * c / cols);
+    }
+    if (!yBounds) {
+      yBounds = [];
+      for (var r = 0; r <= rows; r++) yBounds.push(base.height * r / rows);
+    }
+    var cells = [];
+    var n = Math.min(ACTIONS.length, cols * rows);
+    for (var i = 0; i < n; i++) {
+      var col = i % cols;
+      var row = Math.floor(i / cols);
+      var x0 = Math.max(0, Math.round(xBounds[col]));
+      var y0 = Math.max(0, Math.round(yBounds[row]));
+      var x1 = Math.min(base.width, Math.round(xBounds[col + 1]));
+      var y1 = Math.min(base.height, Math.round(yBounds[row + 1]));
+      var cell = document.createElement("canvas");
+      cell.width = Math.max(1, x1 - x0);
+      cell.height = Math.max(1, y1 - y0);
+      cell.getContext("2d").drawImage(base, x0, y0, cell.width, cell.height, 0, 0, cell.width, cell.height);
+      cells.push(cell);
+    }
+    if (xs || ys) log("Сетка разрезана по зелёным зазорам, персонажей не режем пополам", "ai");
+    return cells;
+  }
+
+  function autoFitMouths() {
+    var moved = 0;
+    ACTIONS.forEach(function (action) {
+      var m = normMouth(mouths[action], action);
+      if (m.manual) {
+        mouths[action] = m;
+        return;
+      }
+      var spr = viewMap[action];
+      if (!spr) {
+        mouths[action] = m;
+        return;
+      }
+      var box = alphaBox(spr);
+      if (!box) return;
+      var scale = 320 / spr.height;
+      var dx = -(spr.width * scale) / 2;
+      var dy = -320 + 36;
+      m.x = Math.round(dx + (box.x + box.w / 2) * scale);
+      m.y = Math.round(dy + (box.y + box.h * 0.28) * scale);
+      m.manual = false;
+      mouths[action] = m;
+      moved += 1;
+    });
+    if (moved) syncSmileUi();
+  }
+
+  function syncSpriteArrays() {
+    rawSprites = ACTIONS.map(function (a) { return spriteMap[a] || null; });
+    viewSprites = ACTIONS.map(function (a) { return viewMap[a] || null; });
+  }
+
+  function reprocessSprites() {
+    readSettingsFromDom();
+    ACTIONS.forEach(function (a) {
+      viewMap[a] = spriteMap[a] ? applyChroma(spriteMap[a]) : null;
+      lipView[a] = lipMap[a] ? trimAlpha(applyChroma(lipMap[a])) : null;
+    });
+    syncSpriteArrays();
+    autoFitMouths();
+    refreshPoseDots();
+  }
+
+  function refreshPoseDots() {
+    var buttons = document.querySelectorAll("[data-pose]");
+    var any = false;
+    buttons.forEach(function (btn) {
+      var a = btn.getAttribute("data-pose");
+      var has = !!spriteMap[a];
+      if (has) any = true;
+      btn.classList.toggle("has", has);
+    });
+    if (!any) {
+      Object.keys(spriteMap).forEach(function (k) { if (spriteMap[k]) any = true; });
+    }
+    $("charMode").textContent = any ? "Спрайты" : "Демо";
+  }
+
+  function loadSpriteDataUrls(urls, names) {
+    var keys = names && names.length ? names : (urls.length <= 10 ? ACTIONS_10 : ACTIONS_16);
+    var jobs = [];
+    for (var i = 0; i < keys.length; i++) {
+      var action = keys[i];
+      if (!action) continue;
+      if (urls[i]) {
+        (function (name, url) {
+          jobs.push(dataUrlToImage(url).then(function (img) {
+            spriteMap[name] = imageToCanvas(img, 900);
+          }).catch(function () {
+            log("Кадр " + name + " из пресета не открылся", "err");
+          }));
+        })(action, urls[i]);
+      } else {
+        delete spriteMap[action];
+        delete viewMap[action];
+      }
+    }
+    Promise.all(jobs).then(function () {
+      reprocessSprites();
+      log("Спрайты из пресета на сцене", "ai");
+    });
+  }
+
+  function loadLipDataUrls(urls, names) {
+    var keys = names && names.length ? names : ACTIONS.slice();
+    var jobs = [];
+    for (var i = 0; i < keys.length; i++) {
+      var action = keys[i];
+      if (!action) continue;
+      if (urls[i]) {
+        (function (name, url) {
+          jobs.push(dataUrlToImage(url).then(function (img) {
+            lipMap[name] = imageToCanvas(img, 900);
+          }).catch(function () {
+            log("Губы " + name + " из пресета не открылись", "err");
+          }));
+        })(action, urls[i]);
+      } else {
+        delete lipMap[action];
+        delete lipView[action];
+      }
+    }
+    Promise.all(jobs).then(function () {
+      reprocessSprites();
+      log("Губы из пресета подогнаны", "ai");
+    });
+  }
+
+  async function onGridFile(file) {
+    var img = await readImageFile(file);
+    var cells = cutGrid(imageToCanvas(img, 1600));
+    for (var i = 0; i < cells.length; i++) spriteMap[ACTIONS[i]] = cells[i];
+    reprocessSprites();
+    log("Сетка персонажа разрезана на " + cells.length + " кадров", "ai");
+    persistLocal();
+  }
+
+  async function onLipFile(file) {
+    var img = await readImageFile(file);
+    var cells = cutGrid(imageToCanvas(img, 1600));
+    for (var i = 0; i < cells.length; i++) lipMap[ACTIONS[i]] = cells[i];
+    reprocessSprites();
+    log("Лист губ разрезан на " + cells.length + " и подогнан под кадры", "ai");
+    persistLocal();
+  }
+
+  async function onSpriteFiles(files) {
+    var list = Array.prototype.slice.call(files, 0, ACTIONS.length);
+    for (var i = 0; i < list.length; i++) {
+      var img = await readImageFile(list[i]);
+      spriteMap[ACTIONS[i]] = imageToCanvas(img, 900);
+    }
+    reprocessSprites();
+    log("Загружено отдельных кадров: " + list.length + ". Откалибруйте линию губ.", "ai");
+    persistLocal();
+  }
+
+  function buildCollage() {
+    var cols = gridMode === "legacy" ? 5 : 4;
+    var cw = 160;
+    var ch = 200;
+    var rows = Math.ceil(ACTIONS.length / cols);
+    var c = document.createElement("canvas");
+    c.width = cw * cols;
+    c.height = ch * rows;
+    var x = c.getContext("2d");
+    x.fillStyle = "#141414";
+    x.fillRect(0, 0, c.width, c.height);
+    for (var i = 0; i < ACTIONS.length; i++) {
+      var px = (i % cols) * cw;
+      var py = Math.floor(i / cols) * ch;
+      x.fillStyle = "#202020";
+      x.fillRect(px + 2, py + 2, cw - 4, ch - 4);
+      var src = spriteMap[ACTIONS[i]];
+      if (src) {
+        var maxW = cw - 16;
+        var maxH = ch - 40;
+        var sc = Math.min(maxW / src.width, maxH / src.height);
+        var w = src.width * sc;
+        var h = src.height * sc;
+        x.drawImage(src, px + (cw - w) / 2, py + 32, w, h);
+      }
+      x.font = "700 28px sans-serif";
+      x.lineWidth = 4;
+      x.strokeStyle = "#000";
+      x.fillStyle = "#fff";
+      x.strokeText(String(i), px + 8, py + 32);
+      x.fillText(String(i), px + 8, py + 32);
+    }
+    return c.toDataURL("image/jpeg", 0.65);
+  }
+
+  function parseMap(raw) {
+    var s = String(raw || "").trim();
+    var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) s = fence[1];
+    var start = s.indexOf("{");
+    var end = s.lastIndexOf("}");
+    if (start < 0 || end <= start) throw new Error("Разметка не JSON");
+    return JSON.parse(s.slice(start, end + 1));
+  }
+
+  function remap(map) {
+    syncSpriteArrays();
+    var old = rawSprites.slice();
+    var next = {};
+    Object.keys(map).forEach(function (k) {
+      var action = String(map[k] || "").toLowerCase().trim();
+      var si = Number(k);
+      if (ACTIONS.indexOf(action) >= 0 && !isNaN(si) && old[si]) next[action] = old[si];
+    });
+    ACTIONS.forEach(function (a) {
+      if (next[a]) spriteMap[a] = next[a];
+      else delete spriteMap[a];
+    });
+    reprocessSprites();
+  }
+
+  function messagesHaveImage(messages) {
+    return messages.some(function (m) {
+      return Array.isArray(m.content) && m.content.some(function (p) { return p && p.type === "image_url"; });
+    });
+  }
+
+  function stripImages(messages) {
+    return messages.map(function (m) {
+      if (!Array.isArray(m.content)) return { role: m.role, content: m.content };
+      var text = m.content.filter(function (p) { return p && p.type === "text"; }).map(function (p) { return p.text || ""; }).join("\n");
+      return { role: m.role, content: text + "\n(Кадр недоступен этой модели, комментируй без картинки.)" };
+    });
+  }
+
+  async function postWithGuards(url, payload, messages, attempt) {
+    var res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + settings.key
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(60000)
+      });
+    } catch (err) {
+      var net = String(err && err.message ? err.message : err);
+      if (/abort|timeout/i.test(net)) throw new Error("Таймаут API (60 с)");
+      throw new Error("Сеть или CORS: " + net);
+    }
+    if (res.status === 429 && attempt < 2) {
+      log("429 Rate Limit — пауза 10 сек", "skip");
+      await sleep(10000);
+      return postWithGuards(url, payload, messages, attempt + 1);
+    }
+    var bodyText = await res.text();
+    if (!res.ok) {
+      if (res.status === 400 && attempt < 1 && messagesHaveImage(messages)) {
+        var imageIssue = /image|vision|multimodal|picture|image_url|unsupported|modal/i.test(bodyText);
+        var unrelated = /thinking|temperature|max_tokens|unknown model|invalid model|model_not_found/i.test(bodyText) && !imageIssue;
+        if (!unrelated) {
+          log("400: модель не приняла картинку — повтор без кадра", "skip");
+          var stripped = stripImages(messages);
+          var next = {
+            model: payload.model,
+            temperature: 0.7,
+            max_tokens: 180,
+            thinking: { type: "disabled" },
+            messages: stripped
+          };
+          return postWithGuards(url, next, stripped, attempt + 1);
+        }
+      }
+      throw new Error(res.status + ": " + bodyText.slice(0, 280));
+    }
+    try {
+      return JSON.parse(bodyText);
+    } catch (err) {
+      throw new Error("Ответ API не JSON");
+    }
+  }
+
+  async function complete(messages) {
+    readSettingsFromDom();
+    var payload = {
+      model: currentModel(),
+      temperature: 0.7,
+      max_tokens: 180,
+      thinking: { type: "disabled" },
+      messages: messages
+    };
+    try {
+      return await postWithGuards(endpoint(), payload, messages, 0);
+    } finally {
+      payload.messages = null;
+    }
+  }
+
+  function accountUsage(data) {
+    var u = (data && data.usage) || {};
+    var inn = u.prompt_tokens || u.input_tokens || 0;
+    var out = u.completion_tokens || u.output_tokens || 0;
+    tokensIn += inn;
+    tokensOut += out;
+    renderStats();
+    if (inn || out) log("Токены +" + inn + " / +" + out, "meta");
+  }
+
+  function extractText(data) {
+    var choice = data && data.choices && data.choices[0];
+    if (!choice || !choice.message) throw new Error("Пустой ответ API");
+    var content = choice.message.content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content.map(function (p) { return (p && p.text) || ""; }).join("");
+    }
+    return "";
+  }
+
+  function extractField(s, key) {
+    var re = new RegExp('"' + key + '"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"');
+    var m = re.exec(s);
+    if (!m) return "";
+    try { return JSON.parse('"' + m[1] + '"'); } catch (err) { return m[1]; }
+  }
+
+  function resolvePose(name) {
+    var n = String(name || "").toLowerCase().trim();
+    if (ACTIONS.indexOf(n) >= 0) return n;
+    var alias = {
+      talk: "idle", sad: "angry", hype: "dance", sip: "think", cringe: "facepalm",
+      smug: "laugh", sleepy: "sit", love: "laugh", confused: "think",
+      dance: "hype", walk: "talk", sit: "sleepy"
+    };
+    var alt = alias[n];
+    if (alt && ACTIONS.indexOf(alt) >= 0) return alt;
+    return ACTIONS.indexOf("idle") >= 0 ? "idle" : ACTIONS[0];
+  }
+
+  function sanitizeDirector(o) {
+    var speech = "";
+    if (o && typeof o.say === "string") speech = o.say;
+    else if (o && typeof o.speech === "string") speech = o.speech;
+    speech = String(speech || "").replace(/\s+/g, " ").trim().slice(0, 500);
+    var poseName = o && (o.pose || o.action);
+    var action = resolvePose(poseName);
+    var move = o && (o.move_to === "left" || o.move_to === "center" || o.move_to === "right" || o.move_to === "stay") ? o.move_to : "stay";
+    var zoom = !!(o && (o.zoom === true || o.zoom === "true"));
+    var summary = o && typeof o.summary === "string" ? o.summary.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+    return { speech: speech, action: action, move_to: move, zoom: zoom, summary: summary };
+  }
+
+  function parseDirector(raw) {
+    var s = String(raw || "").trim();
+    if (!s) return sanitizeDirector({ say: "", pose: "idle" });
+    var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) s = fence[1].trim();
+    var block = s.match(/\{[\s\S]*\}/);
+    if (block) {
+      try { return sanitizeDirector(JSON.parse(block[0])); } catch (err) { /* regex fields */ }
+    }
+    var say = extractField(s, "say") || extractField(s, "speech");
+    var pose = /"pose"\s*:\s*"([^"]+)"/.exec(s) || /"action"\s*:\s*"([^"]+)"/.exec(s);
+    var summary = extractField(s, "summary");
+    var move = /"move_to"\s*:\s*"([^"]+)"/.exec(s);
+    var zoom = /"zoom"\s*:\s*(true|false)/.exec(s);
+    if (say || pose || summary) {
+      return sanitizeDirector({
+        say: say || s.slice(0, 240),
+        pose: pose && pose[1],
+        summary: summary,
+        move_to: move && move[1],
+        zoom: zoom && zoom[1] === "true"
+      });
+    }
+    return sanitizeDirector({ say: s.replace(/```/g, "").slice(0, 300), pose: "idle" });
+  }
+
+  function buildSystem() {
+    return SYSTEM_PROMPT;
+  }
+
+  function buildUserText(lines) {
+    var bits = [];
+    bits.push("Доступные позы: " + ACTIONS.join(", ") + ".");
+    bits.push("Характер: " + (settings.personality || "саркастичный диванный эксперт, шутит коротко"));
+    if ((settings.topic || "").trim()) bits.push("Тема ролика: " + settings.topic.trim());
+    if (rollingMemory.length) {
+      bits.push("Память сюжета (старое → новое):");
+      rollingMemory.forEach(function (s) { bits.push("- " + s); });
+    }
+    var heard = (audioTranscript || "").trim();
+    if (heard) bits.push("Речь со звука за последние секунды: " + heard);
+    if (settings.mode === "script") {
+      bits.push("Режим: по сценарию. Веди план по порядку и не повторяй уже сказанное.");
+      bits.push("План:\n" + (settings.script || "свободный эфир"));
+    } else {
+      bits.push("Режим: импровизация. Комментируй кадр экрана, звук и новые реплики чата.");
+    }
+    if (settings.platform) {
+      bits.push("Правила VK Видео и Rutube: запрещены политика, оскорбления, мат, банворды, трагедии и дискредитация. Опасную тему уводи в бытовую шутку.");
+    }
+    if ((settings.banned || "").trim()) bits.push("Запретные темы автора: " + settings.banned.trim() + ". Не касайся их.");
+    if (lines.length) {
+      bits.push("Новые сообщения чата:");
+      lines.forEach(function (m) { bits.push(m.user + ": " + m.text); });
+      bits.push("Ответь в образе.");
+    } else {
+      bits.push("Новых сообщений нет. Коротко прокомментируй кадр, звук или продолжи мысль. Если кадра нет — импровизируй.");
+    }
+    bits.push("Только JSON.");
+    return bits.join("\n");
+  }
+
+  function videoReady() {
+    return video && video.readyState >= 2 && video.videoWidth > 0;
+  }
+
+  function captureFrame() {
+    if (!videoReady()) return null;
+    try {
+      diffCtx.drawImage(video, 0, 0, 32, 18);
+      var img = diffCtx.getImageData(0, 0, 32, 18);
+      var diff = 1;
+      if (prevSent) diff = pixelDiff(prevSent, img.data);
+      lastGrid = new Uint8ClampedArray(img.data);
+      capCtx.drawImage(video, 0, 0, 448, 252);
+      var dataUrl = cap.toDataURL("image/jpeg", 0.55);
+      taintedLogged = false;
+      return { dataUrl: dataUrl, diff: diff };
+    } catch (err) {
+      if (!taintedLogged) {
+        taintedLogged = true;
+        log("Кадр нельзя прочитать (tainted canvas) — только текст", "skip");
+      }
+      return null;
+    }
+  }
+
+  function pixelDiff(a, b) {
+    var n = 32 * 18;
+    var changed = 0;
+    for (var i = 0; i < n; i++) {
+      var o = i * 4;
+      var dr = Math.abs(a[o] - b[o]);
+      var dg = Math.abs(a[o + 1] - b[o + 1]);
+      var db = Math.abs(a[o + 2] - b[o + 2]);
+      if ((dr + dg + db) / 3 > 24) changed++;
+    }
+    return changed / n;
+  }
+
+  function commitFrame() {
+    if (lastGrid) prevSent = lastGrid;
+  }
+
+  function voiceBusy() {
+    if (isSpeaking) return true;
+    return !!(window.speechSynthesis && speechSynthesis.speaking);
+  }
+
+  function phonemeWeight(ch) {
+    var c = String(ch || "").toLowerCase();
+    if (c === "а" || c === "о" || c === "я") return 1;
+    if (c === "у" || c === "ю" || c === "ё") return 0.92;
+    if (c === "э" || c === "е" || c === "ы" || c === "и") return 0.85;
+    if (c === "м" || c === "б" || c === "п") return 0;
+    if (!/[a-zа-яё0-9]/i.test(c)) return 0;
+    return 0.35;
+  }
+
+  function buildPhonemes(text) {
+    phonemeSeq = [];
+    var s = String(text || "");
+    for (var i = 0; i < s.length; i++) phonemeSeq.push(phonemeWeight(s.charAt(i)));
+    boundaryIdx = 0;
+    boundaryAt = performance.now();
+    speechStart = boundaryAt;
+    speechDur = Math.max(800, s.length * 68);
+    mouthTarget = phonemeSeq.length ? phonemeSeq[0] : 0;
+  }
+
+  function pushMemory(summary) {
+    summary = String(summary || "").replace(/\s+/g, " ").trim();
+    if (!summary) return;
+    rollingMemory.push(summary);
+    while (rollingMemory.length > 3) rollingMemory.shift();
+    var el = $("memView");
+    if (el) el.textContent = "Память: " + rollingMemory.join(" → ");
+  }
+
+  function armWaitPose() {
+    if (ACTIONS.indexOf("sip") >= 0 && Math.random() < 0.45) apiWaitPose = "sip";
+    else apiWaitPose = ACTIONS.indexOf("think") >= 0 ? "think" : "idle";
+  }
+
+  function applyDirector(dir) {
+    desiredAction = dir.action;
+    moveTo = dir.move_to || "stay";
+    if (dir.zoom) zoomUntil = performance.now() + 2000;
+    if (dir.summary) pushMemory(dir.summary);
+  }
+
+  function stopTalking() {
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    if (ttsAudio) {
+      try { ttsAudio.pause(); } catch (err) {}
+      ttsAudio = null;
+    }
+  }
+
+  function currentTtsModel() {
+    if (settings.ttsModel === "custom") return (settings.ttsModelCustom || "").trim() || "ru_RU-irina-medium";
+    return settings.ttsModel || "ru_RU-irina-medium";
+  }
+
+  function syncVoiceEngineUi() {
+    var local = $("voiceEngine") && $("voiceEngine").value === "local";
+    if ($("localVoiceBox")) $("localVoiceBox").hidden = !local;
+    if ($("browserVoiceBox")) $("browserVoiceBox").hidden = !!local;
+    if ($("ttsCustomWrap") && $("ttsModel")) $("ttsCustomWrap").hidden = $("ttsModel").value !== "custom";
+  }
+
+  function speakLocal(text) {
+    var base = String(settings.ttsBase || "http://127.0.0.1:5002/v1").replace(/\/+$/, "");
+    var model = currentTtsModel();
+    return fetch(base + "/audio/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: model, voice: model, input: text, response_format: "mp3" })
+    }).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.blob();
+    }).then(function (blob) {
+      if (dropSpeech) return;
+      var url = URL.createObjectURL(blob);
+      return new Promise(function (resolve) {
+        var audio = new Audio(url);
+        ttsAudio = audio;
+        audio.playbackRate = clamp(Number(settings.rate) || 1, 0.7, 1.5);
+        var settled = false;
+        function finish() {
+          if (settled) return;
+          settled = true;
+          isSpeaking = false;
+          mouthTarget = 0;
+          phonemeSeq = [];
+          cooldownUntil = Date.now() + 1500;
+          if (streaming) setStatus("Ожидание");
+          URL.revokeObjectURL(url);
+          if (ttsAudio === audio) ttsAudio = null;
+          resolve();
+        }
+        audio.onended = finish;
+        audio.onerror = finish;
+        audio.onplay = function () {
+          buildPhonemes(text);
+          speechStart = performance.now();
+          isSpeaking = true;
+          setStatus("Говорит");
+        };
+        audio.play().catch(function () { finish(); });
+      });
+    });
+  }
+
+  async function speak(text) {
+    if (!text) return;
+    stopTalking();
+    await sleep(40);
+    if (dropSpeech) return;
+    readSettingsFromDom();
+    if (settings.voiceEngine === "local") {
+      try {
+        await speakLocal(text);
+        return;
+      } catch (err) {
+        log("Локальная модель не ответила (" + (err && err.message ? err.message : err) + "). Говорю голосом браузера.", "err");
+      }
+    }
+    if (!window.speechSynthesis) return;
+    speechSynthesis.cancel();
+    await sleep(40);
+    return new Promise(function (resolve) {
+      var settled = false;
+      var u = new SpeechSynthesisUtterance(text);
+      var voices = speechSynthesis.getVoices();
+      var uri = $("voiceSel").value;
+      var voice = null;
+      for (var i = 0; i < voices.length; i++) if (voices[i].voiceURI === uri) voice = voices[i];
+      if (voice) u.voice = voice;
+      u.lang = voice && voice.lang ? voice.lang : "ru-RU";
+      u.rate = clamp(Number(settings.rate) || 1, 0.7, 1.5);
+      u.pitch = clamp(Number(settings.pitch) || 1, 0.6, 1.4);
+      buildPhonemes(text);
+      u.onboundary = function (ev) {
+        lipBurstAt = performance.now();
+        boundaryAt = lipBurstAt;
+        if (ev && typeof ev.charIndex === "number" && ev.charIndex >= 0) {
+          boundaryIdx = ev.charIndex;
+          var rate = clamp(Number(settings.rate) || 1, 0.7, 1.5);
+          speechStart = boundaryAt - (ev.charIndex / (12.5 * rate)) * 1000;
+        }
+      };
+      function finish() {
+        if (settled) return;
+        settled = true;
+        isSpeaking = false;
+        mouthTarget = 0;
+        phonemeSeq = [];
+        cooldownUntil = Date.now() + 1500;
+        if (streaming) setStatus("Ожидание");
+        clearInterval(watch);
+        clearTimeout(hard);
+        resolve();
+      }
+      u.onend = finish;
+      u.onerror = finish;
+      isSpeaking = true;
+      setStatus("Говорит");
+      speechSynthesis.speak(u);
+      var watch = setInterval(function () {
+        if (settled) return;
+        if (!speechSynthesis.speaking && !speechSynthesis.pending) finish();
+        else speechSynthesis.resume();
+      }, 500);
+      var hard = setTimeout(finish, 30000);
+    });
+  }
+
+  function priorityOf(opts) {
+    if (!opts) return 9;
+    if (typeof opts.priority === "number") return opts.priority;
+    if (opts.reason === "chat") return 1;
+    if (opts.reason === "audio" || opts.reason === "diff") return 2;
+    return 3;
+  }
+
+  function rememberQueue(opts) {
+    if (!opts) return;
+    opts.priority = priorityOf(opts);
+    if (!queued || opts.priority < priorityOf(queued)) queued = opts;
+  }
+
+  async function runCycle(opts) {
+    opts = opts || {};
+    opts.priority = priorityOf(opts);
+    if (!streaming && !opts.force) return;
+    if (isBusy || voiceBusy()) {
+      rememberQueue(opts);
+      return;
+    }
+    if (!opts.force && Date.now() < cooldownUntil) {
+      if (opts.priority <= 2) rememberQueue(opts);
+      return;
+    }
+    var myEpoch = epoch;
+    isBusy = true;
+    armWaitPose();
+    waitingApi = true;
+    lastCycleAt = Date.now();
+    setStatus("Думает");
+    var lines = pendingLines.splice(0, pendingLines.length);
+    var shot = null;
+    var messages = null;
+    try {
+      readSettingsFromDom();
+      if (!String(settings.key || "").trim()) throw new Error("Нет API-ключа. Вкладка «API и голос».");
+      shot = captureFrame();
+      var thresh = (Number(settings.thresh) || 5) / 100;
+      var strong = !!(shot && shot.diff >= Math.max(0.28, thresh * 3));
+      if (!opts.force && opts.priority > 2 && settings.economy && lines.length === 0 && shot && shot.diff < thresh && !strong) {
+        savedReqs += 1;
+        renderStats();
+        log("Пропуск API: движение " + (shot.diff * 100).toFixed(1) + "% < " + settings.thresh + "%, чат пуст", "skip");
+        if (shot) shot.dataUrl = "";
+        return;
+      }
+      if (strong && opts.priority > 2) opts.priority = 2;
+      commitFrame();
+      var text = buildUserText(lines);
+      var content = text;
+      if (shot && shot.dataUrl) {
+        content = [
+          { type: "text", text: text },
+          { type: "image_url", image_url: { url: shot.dataUrl } }
+        ];
+      }
+      messages = [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: content }
+      ];
+      var data = await complete(messages);
+      if (epoch !== myEpoch) return;
+      var raw = extractText(data);
+      accountUsage(data);
+      var dir = parseDirector(raw);
+      if (shot) shot.dataUrl = "";
+      shot = null;
+      messages = null;
+      waitingApi = false;
+      applyDirector(dir);
+      log("ИИ [" + dir.action + (dir.summary ? " · " + dir.summary : "") + "]: " + (dir.speech || "…"), "ai");
+      if (!dropSpeech && dir.speech && (streaming || opts.force) && epoch === myEpoch) await speak(dir.speech);
+      dropSpeech = false;
+    } catch (err) {
+      if (lines.length) pendingLines = lines.concat(pendingLines).slice(-5);
+      cooldownUntil = Date.now() + 1200;
+      log(String(err && err.message ? err.message : err), "err");
+    } finally {
+      if (shot) shot.dataUrl = "";
+      messages = null;
+      waitingApi = false;
+      isBusy = false;
+      if (!voiceBusy()) setStatus("Ожидание");
+      if (queued && (streaming || queued.force)) {
+        var q = queued;
+        queued = null;
+        var wait = q.priority <= 2 ? 40 : Math.max(0, cooldownUntil - Date.now()) + 40;
+        setTimeout(function () { runCycle(q); }, wait);
+      }
+    }
+  }
+
+  function requestCycle(opts) {
+    runCycle(opts || {});
+  }
+
+  var THROWS = [
+    ["Аня", "А это живой ведущий или картинка?"],
+    ["Кирилл", "Скажи честно, ты импровизируешь?"],
+    ["Марина", "Почему ты такой жёлтый?"],
+    ["Олег", "Анекдот в одно предложение, можно?"],
+    ["Света", "Покажись поближе к камере."],
+    ["Дима", "Ты завис или думаешь?"],
+    ["Лена", "Укажи пальцем, если меня слышно."],
+    ["Игорь", "Какая сегодня тема эфира?"],
+    ["Нина", "Без политики, ладно?"],
+    ["Паша", "Станцуй, если не сложно."]
+  ];
+
+  function renderChat() {
+    var box = $("chatList");
+    box.replaceChildren();
+    if (!chatBuf.length) {
+      var empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "Пока тихо. Вбросьте тест или подключите мост.";
+      box.appendChild(empty);
+      return;
+    }
+    chatBuf.forEach(function (m) {
+      var row = document.createElement("div");
+      row.className = "chat-row";
+      var u = document.createElement("b");
+      u.textContent = m.user;
+      var t = document.createElement("span");
+      t.textContent = " " + m.text;
+      row.appendChild(u);
+      row.appendChild(t);
+      box.appendChild(row);
+    });
+  }
+
+  function pushChat(user, text) {
+    user = String(user || "зритель").slice(0, 40);
+    text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 240);
+    if (!text) return;
+    var key = user + "\0" + text;
+    if (chatBuf.some(function (m) { return m.key === key; })) {
+      log("Антиспам: повтор «" + text.slice(0, 48) + "»", "skip");
+      return;
+    }
+    chatBuf.push({ user: user, text: text, key: key });
+    while (chatBuf.length > 5) chatBuf.shift();
+    pendingLines.push({ user: user, text: text });
+    while (pendingLines.length > 5) pendingLines.shift();
+    renderChat();
+    log("Чат · " + user + ": " + text, "info");
+    if (streaming) requestCycle({ force: false, reason: "chat" });
+    else log("В очереди до старта стрима", "skip");
+  }
+
+  function connectWs() {
+    if (!wsWanted) return;
+    var url = settings.wsUrl || "ws://localhost:8765";
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      scheduleWs();
+      return;
+    }
+    ws.onopen = function () {
+      wsTries = 0;
+      log("Мост чата подключён", "ai");
+    };
+    ws.onmessage = function (ev) {
+      try {
+        var data = JSON.parse(ev.data);
+        if (data && data.user && data.text) pushChat(String(data.user), String(data.text));
+      } catch (err) {
+        log("Мост прислал не JSON", "err");
+      }
+    };
+    ws.onerror = function () {};
+    ws.onclose = function () {
+      ws = null;
+      if (!wsWanted) return;
+      wsTries += 1;
+      if (wsTries === 1 || wsTries % 5 === 0) log("Мост недоступен, повтор через 3 с", "skip");
+      scheduleWs();
+    };
+  }
+
+  function scheduleWs() {
+    clearTimeout(wsTimer);
+    wsTimer = setTimeout(connectWs, 3000);
+  }
+
+  function disconnectWs() {
+    wsWanted = false;
+    clearTimeout(wsTimer);
+    if (ws) {
+      ws.onclose = null;
+      try { ws.close(); } catch (err) {}
+      ws = null;
+    }
+  }
+
+  function startStream() {
+    readSettingsFromDom();
+    streaming = true;
+    epoch += 0;
+    lastCycleAt = Date.now() - Math.max(0, (settings.interval - 1.2) * 1000);
+    $("btnStream").textContent = "⏹ ОСТАНОВИТЬ СТРИМ";
+    $("btnStream").classList.add("live");
+    setStatus("Ожидание");
+    log("Стрим запущен. Интервал " + settings.interval + " с, модель " + currentModel(), "ai");
+    if (settings.wsAuto) {
+      wsWanted = true;
+      wsTries = 0;
+      connectWs();
+    }
+  }
+
+  function stopStream() {
+    streaming = false;
+    epoch += 1;
+    queued = null;
+    dropSpeech = true;
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    isSpeaking = false;
+    mouthTarget = 0;
+    phonemeSeq = [];
+    waitingApi = false;
+    $("btnStream").textContent = "▶ ЗАПУСТИТЬ СТРИМ";
+    $("btnStream").classList.remove("live");
+    setStatus("Ожидание");
+    disconnectWs();
+    log("Стрим остановлен", "skip");
+  }
+
+  function stopCapture() {
+    stopClip(true);
+    capAudioTrack = null;
+    detachAudio();
+    var so = video.srcObject;
+    if (so && so.getTracks) so.getTracks().forEach(function (t) { t.stop(); });
+    video.srcObject = null;
+    prevSent = null;
+    lastGrid = null;
+    taintedLogged = false;
+    recordingSpeech = false;
+    voicedSince = 0;
+    quietSince = 0;
+  }
+
+  function applyVideoUrl() {
+    readSettingsFromDom();
+    stopCapture();
+    var url = settings.videoUrl;
+    if (!url) {
+      video.removeAttribute("src");
+      video.load();
+      log("Видео убрано", "info");
+      persistLocal();
+      return;
+    }
+    video.src = url;
+    video.play().then(function () {
+      log("Видео запущено", "ai");
+    }).catch(function (err) {
+      log("Видео не играет: " + (err.message || err) + ". Нужна прямая ссылка на файл.", "err");
+    });
+    persistLocal();
+  }
+
+  function detachAudio() {
+    if (audioSource) {
+      try { audioSource.disconnect(); } catch (err) {}
+      audioSource = null;
+    }
+    analyser = null;
+    audioData = null;
+    rms = 0;
+    paintMeter();
+  }
+
+  function attachAudio(stream) {
+    var tracks = stream.getAudioTracks ? stream.getAudioTracks() : [];
+    if (!tracks.length) {
+      log("В захвате нет звуковой дорожки — индикатор молчит", "skip");
+      return;
+    }
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) {
+      log("Web Audio API недоступен", "err");
+      return;
+    }
+    try {
+      if (!audioCtx) audioCtx = new AC();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      detachAudio();
+      audioSource = audioCtx.createMediaStreamSource(new MediaStream([tracks[0]]));
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      audioSource.connect(analyser);
+      audioData = new Uint8Array(analyser.fftSize);
+      log("Звук окна подключён — речь с вкладки уйдёт ведущему текстом", "ai");
+    } catch (err) {
+      log("Аудио захвата: " + (err && err.message ? err.message : err), "err");
+    }
+  }
+
+  function paintMeter() {
+    var fill = $("volFill");
+    var label = $("volVal");
+    var pct = clamp(Math.round(rms * 420), 0, 100);
+    if (label) label.textContent = String(pct);
+    if (fill) {
+      fill.style.width = pct + "%";
+      var floor = ((Number(settings.audioThresh) || 35) / 100) * 0.12 + 0.015;
+      fill.classList.toggle("hot", rms > Math.max(floor, rmsAvg * 1.35) && rms > 0.02);
+    }
+  }
+
+  function sampleAudio() {
+    if (!analyser || !audioData) {
+      if (rms > 0.001) {
+        rms *= 0.85;
+        paintMeter();
+      }
+      return;
+    }
+    analyser.getByteTimeDomainData(audioData);
+    var sum = 0;
+    for (var i = 0; i < audioData.length; i++) {
+      var v = (audioData[i] - 128) / 128;
+      sum += v * v;
+    }
+    rms = Math.sqrt(sum / audioData.length);
+    rmsAvg = rmsAvg * 0.96 + rms * 0.04;
+    paintMeter();
+    var nowMs = performance.now();
+    var step = lastAudioSampleAt ? Math.min(80, nowMs - lastAudioSampleAt) : 16;
+    lastAudioSampleAt = nowMs;
+    var floor = ((Number(settings.audioThresh) || 35) / 100) * 0.12 + 0.012;
+    var loud = rms > Math.max(floor, rmsAvg * 1.22) && rms > floor;
+    if (loud) {
+      if (!voicedSince) voicedSince = nowMs;
+      quietSince = 0;
+      if (!recordingSpeech && !sttBusy && nowMs - voicedSince > 260) startClip();
+    } else {
+      voicedSince = 0;
+      if (recordingSpeech) {
+        if (!quietSince) quietSince = nowMs;
+        if (nowMs - quietSince > 650) stopClip(false);
+      } else quietSince = 0;
+    }
+    if (recordingSpeech && clipStarted && nowMs - clipStarted > 8000) stopClip(false);
+    if (!streaming || isBusy || voiceBusy()) return;
+    if (rmsAvg > 0.008 && rms > rmsAvg * 1.45 && rms > floor && Date.now() - lastSpikeAt > 6000 && !audioTranscript) {
+      lastSpikeAt = Date.now();
+      log("Скачок звука — реакция без текста", "meta");
+      requestCycle({ force: true, reason: "audio", priority: 2 });
+    }
+  }
+
+  function pushHeard(text) {
+    text = String(text || "").replace(/\s+/g, " ").trim();
+    if (text.length < 2) return;
+    if (text === lastHeard) return;
+    lastHeard = text;
+    transcriptParts.push({ t: Date.now(), text: text });
+    audioTranscriptInterim = "";
+    pruneTranscript();
+    log("Слышу с окна: " + text, "ai");
+    if (streaming && !isBusy && !voiceBusy()) {
+      requestCycle({ force: true, reason: "audio", priority: 2 });
+    }
+  }
+
+  function startClip() {
+    if (!capAudioTrack || recordingSpeech || sttBusy || !window.MediaRecorder) return;
+    var mime = "";
+    if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) mime = "audio/webm;codecs=opus";
+    else if (MediaRecorder.isTypeSupported("audio/webm")) mime = "audio/webm";
+    try {
+      clipChunks = [];
+      mediaRec = mime
+        ? new MediaRecorder(new MediaStream([capAudioTrack]), { mimeType: mime })
+        : new MediaRecorder(new MediaStream([capAudioTrack]));
+      mediaRec.ondataavailable = function (ev) {
+        if (ev.data && ev.data.size) clipChunks.push(ev.data);
+      };
+      mediaRec.onstop = function () {
+        var type = (mediaRec && mediaRec.mimeType) || mime || "audio/webm";
+        var blob = new Blob(clipChunks, { type: type });
+        clipChunks = [];
+        mediaRec = null;
+        transcribeClip(blob);
+      };
+      mediaRec.start();
+      recordingSpeech = true;
+      clipStarted = performance.now();
+      quietSince = 0;
+    } catch (err) {
+      recordingSpeech = false;
+      if (!sttFailLogged) {
+        sttFailLogged = true;
+        log("Не удалось писать звук окна: " + (err && err.message ? err.message : err), "err");
+      }
+    }
+  }
+
+  function stopClip(discard) {
+    quietSince = 0;
+    voicedSince = 0;
+    if (!recordingSpeech) return;
+    recordingSpeech = false;
+    clipStarted = 0;
+    if (!mediaRec) return;
+    if (discard) {
+      mediaRec.onstop = null;
+      mediaRec.ondataavailable = null;
+      try { if (mediaRec.state !== "inactive") mediaRec.stop(); } catch (err) {}
+      mediaRec = null;
+      clipChunks = [];
+      return;
+    }
+    try { if (mediaRec.state !== "inactive") mediaRec.stop(); } catch (err) { mediaRec = null; }
+  }
+
+  async function transcribeClip(blob) {
+    if (!blob || blob.size < 2800) return;
+    readSettingsFromDom();
+    sttBusy = true;
+    var heard = "";
+    try {
+      if (!sttApiDead && String(settings.key || "").trim()) {
+        var base = String(settings.base || DEFAULT_BASE).replace(/\/+$/, "");
+        var models = sttModel ? [sttModel] : ["whisper-large-v3-turbo", "whisper-1", "openai/whisper-1"];
+        for (var i = 0; i < models.length && !heard; i++) {
+          try {
+            var fd = new FormData();
+            fd.append("file", blob, "speech.webm");
+            fd.append("model", models[i]);
+            fd.append("language", "ru");
+            fd.append("response_format", "json");
+            var res = await fetch(base + "/audio/transcriptions", {
+              method: "POST",
+              headers: { "Authorization": "Bearer " + settings.key },
+              body: fd,
+              signal: AbortSignal.timeout(8000)
+            });
+            var raw = await res.text();
+            if (!res.ok) {
+              if (res.status === 401 || res.status === 403) break;
+              continue;
+            }
+            var data = {};
+            try { data = JSON.parse(raw); } catch (err) { data = { text: raw }; }
+            heard = String(data.text || data.transcript || "").trim();
+            if (heard) sttModel = models[i];
+          } catch (err) {}
+        }
+        if (!heard) sttApiDead = true;
+      }
+      if (!heard) heard = await localTranscribe(blob);
+      if (heard) {
+        sttFailLogged = false;
+        pushHeard(heard);
+      } else if (!sttFailLogged) {
+        sttFailLogged = true;
+        log("Звук окна есть, но слова не разобрались. Говорите громче и дольше одной секунды.", "skip");
+      }
+    } catch (err) {
+      if (!sttFailLogged) {
+        sttFailLogged = true;
+        log("Речь окна не разобралась: " + (err && err.message ? err.message : err), "err");
+      }
+    } finally {
+      sttBusy = false;
+    }
+  }
+
+  var asrPipe = null;
+  var asrLoading = null;
+  var sttApiDead = false;
+
+  function ensureAsr() {
+    if (asrPipe) return Promise.resolve(asrPipe);
+    if (asrLoading) return asrLoading;
+    log("Скачиваю распознавание речи окна. Первый раз это займёт около минуты.", "info");
+    asrLoading = import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2").then(function (mod) {
+      mod.env.allowLocalModels = false;
+      mod.env.useBrowserCache = true;
+      return mod.pipeline("automatic-speech-recognition", "Xenova/whisper-base", { quantized: true });
+    }).then(function (pipe) {
+      asrPipe = pipe;
+      asrLoading = null;
+      log("Речь с окна теперь разбирается на текст", "ai");
+      return pipe;
+    }).catch(function (err) {
+      asrLoading = null;
+      throw err;
+    });
+    return asrLoading;
+  }
+
+  async function audioTo16k(blob) {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") await audioCtx.resume();
+    var raw = await blob.arrayBuffer();
+    var decoded = await audioCtx.decodeAudioData(raw.slice(0));
+    var src = decoded.numberOfChannels > 1 ? decoded.getChannelData(0) : decoded.getChannelData(0);
+    var rate = decoded.sampleRate;
+    var len = Math.max(1, Math.round(src.length * 16000 / rate));
+    var out = new Float32Array(len);
+    for (var i = 0; i < len; i++) {
+      var x = (i * rate) / 16000;
+      var i0 = Math.min(src.length - 1, Math.floor(x));
+      var i1 = Math.min(src.length - 1, i0 + 1);
+      var f = x - Math.floor(x);
+      out[i] = src[i0] * (1 - f) + src[i1] * f;
+    }
+    return out;
+  }
+
+  async function localTranscribe(blob) {
+    var pipe = await ensureAsr();
+    var audio = await audioTo16k(blob);
+    var out = await pipe(audio, { language: "russian", task: "transcribe" });
+    return out && out.text ? String(out.text).replace(/\s+/g, " ").trim() : "";
+  }
+
+  function pruneTranscript() {
+    var now = Date.now();
+    transcriptParts = transcriptParts.filter(function (p) { return now - p.t < 10000; });
+    audioTranscript = transcriptParts.map(function (p) { return p.text; }).join(" ").replace(/\s+/g, " ").trim();
+    if (audioTranscriptInterim) audioTranscript = (audioTranscript + " " + audioTranscriptInterim).trim();
+    audioTranscript = audioTranscript.slice(-500);
+  }
+
+  function startListen() {
+    stopListen();
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      log("Распознавание речи недоступно в этом браузере", "err");
+      settings.listenMic = false;
+      if ($("listenMic")) $("listenMic").checked = false;
+      return;
+    }
+    try {
+      rec = new SR();
+      rec.lang = "ru-RU";
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = function (ev) {
+        var finals = "";
+        var interim = "";
+        for (var i = ev.resultIndex; i < ev.results.length; i++) {
+          var piece = ev.results[i][0] ? ev.results[i][0].transcript : "";
+          if (ev.results[i].isFinal) finals += piece + " ";
+          else interim += piece;
+        }
+        if (finals.trim()) transcriptParts.push({ t: Date.now(), text: finals.trim() });
+        audioTranscriptInterim = interim.trim();
+        pruneTranscript();
+      };
+      rec.onerror = function (ev) {
+        var code = ev && ev.error ? ev.error : "";
+        if (code === "not-allowed" || code === "service-not-allowed") {
+          log("Микрофон запрещён", "err");
+          settings.listenMic = false;
+          if ($("listenMic")) $("listenMic").checked = false;
+          stopListen();
+        }
+      };
+      rec.onend = function () {
+        if (!settings.listenMic || !rec) return;
+        setTimeout(function () {
+          if (!settings.listenMic || !rec) return;
+          try { rec.start(); } catch (err) {}
+        }, 400);
+      };
+      rec.start();
+      log("Слушаю речь через микрофон / VB-Cable", "ai");
+    } catch (err) {
+      rec = null;
+      settings.listenMic = false;
+      if ($("listenMic")) $("listenMic").checked = false;
+      log("SpeechRecognition: " + (err && err.message ? err.message : err), "err");
+    }
+  }
+
+  function stopListen() {
+    var r = rec;
+    rec = null;
+    if (!r) return;
+    try { r.onend = null; r.stop(); } catch (err) {}
+  }
+
+  async function captureScreen() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      log("Этот браузер не даёт захват экрана", "err");
+      return;
+    }
+    var tries = [
+      {
+        video: { frameRate: 15 },
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        systemAudio: "include",
+        selfBrowserSurface: "exclude",
+        surfaceSwitching: "include"
+      },
+      { video: true, audio: true }
+    ];
+    var stream = null;
+    var lastErr = null;
+    for (var i = 0; i < tries.length; i++) {
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia(tries[i]);
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (err && (err.name === "NotAllowedError" || err.name === "AbortError")) break;
+      }
+    }
+    if (!stream) {
+      log(lastErr && lastErr.name === "NotAllowedError" ? "Захват отменён" : "Захват не открылся", "skip");
+      return;
+    }
+    try {
+      stopCapture();
+      video.removeAttribute("src");
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      capAudioTrack = (stream.getAudioTracks && stream.getAudioTracks()[0]) || null;
+      attachAudio(stream);
+      if (capAudioTrack) {
+        log("Захват включён, звук окна слушаю. Говорите во вкладке — фраза попадёт ведущему.", "ai");
+        ensureAsr().catch(function (err) {
+          log("Распознавание не скачалось: " + (err && err.message ? err.message : err), "err");
+        });
+      } else {
+        log("Картинка есть, звука нет. Захватите вкладку и включите «Поделиться звуком».", "err");
+      }
+      var track = stream.getVideoTracks()[0];
+      if (track) track.addEventListener("ended", function () {
+        stopCapture();
+        log("Захват остановлен", "skip");
+      });
+    } catch (err) {
+      log("Захват: " + (err && err.message ? err.message : err), "err");
+    }
+  }
+
+  function scoreVoice(v) {
+    var s = 0;
+    if (/dmitry/i.test(v.name)) s += 50;
+    if (/^ru([-_]|$)/i.test(v.lang)) s += 20;
+    if (/russian/i.test(v.name)) s += 8;
+    if (/natural/i.test(v.name)) s += 4;
+    return s;
+  }
+
+  function loadVoices() {
+    if (!window.speechSynthesis) return;
+    var voices = speechSynthesis.getVoices() || [];
+    var sel = $("voiceSel");
+    var prev = settings.voiceURI || sel.value;
+    sel.replaceChildren();
+    if (!voices.length) {
+      var empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Голоса ещё не пришли";
+      sel.appendChild(empty);
+      return;
+    }
+    var ranked = voices.slice().sort(function (a, b) { return scoreVoice(b) - scoreVoice(a); });
+    ranked.forEach(function (v) {
+      var o = document.createElement("option");
+      o.value = v.voiceURI;
+      o.textContent = v.name + " · " + v.lang;
+      sel.appendChild(o);
+    });
+    var pick = null;
+    for (var i = 0; i < ranked.length; i++) if (ranked[i].voiceURI === prev) pick = ranked[i];
+    if (!pick) pick = ranked[0];
+    sel.value = pick.voiceURI;
+    settings.voiceURI = sel.value;
+  }
+
+  function setObs(on) {
+    document.body.classList.toggle("obs", !!on);
+    $("obsExit").hidden = !on;
+    log(on ? "Режим OBS: панель скрыта. Esc — вернуть." : "Панель возвращена", "info");
+  }
+
+  function setPose(action) {
+    if (ACTIONS.indexOf(action) < 0) return;
+    desiredAction = action;
+    moveTo = "stay";
+    walking = false;
+    syncSmileUi();
+  }
+
+  function poseOffset(action, now) {
+    var y = 0;
+    if (action === "sit" || action === "sleepy") y += action === "sleepy" ? 10 : 36;
+    if (action === "dance" || action === "hype") y -= Math.abs(Math.sin(now * 0.008)) * 16;
+    if (action === "sip") y += 4;
+    return y;
+  }
+
+  function deform(now) {
+    var k = 0;
+    if (now < squashUntil) {
+      var p = clamp((now - squashT0) / 180, 0, 1);
+      k = Math.sin(p * Math.PI);
+    }
+    var breath = Math.sin(now * 0.0026);
+    return {
+      sx: (1 + 0.05 * k) * (1 + breath * 0.012),
+      sy: (1 - 0.05 * k) * (1 - breath * 0.01),
+      cam: 1 + zoomAmp,
+      offY: poseOffset(visualAction, now)
+    };
+  }
+
+  function mouthAmount(now) {
+    var target = 0;
+    if (isSpeaking && phonemeSeq.length) {
+      var rate = clamp(Number(settings.rate) || 1, 0.7, 1.5);
+      var cps = 12.5 * rate;
+      var pos = Math.max(0, ((now - speechStart) / 1000) * cps);
+      var idx = clamp(Math.floor(pos), 0, phonemeSeq.length - 1);
+      var next = phonemeSeq[Math.min(phonemeSeq.length - 1, idx + 1)];
+      var frac = pos - Math.floor(pos);
+      target = phonemeSeq[idx] + (next - phonemeSeq[idx]) * frac;
+      target *= 0.78 + 0.22 * (0.5 + 0.5 * Math.sin(now * 0.034));
+    }
+    mouthSm += (target - mouthSm) * 0.28;
+    if (mouthSm < 0.008) mouthSm = 0;
+    if (mouthSm > 1) mouthSm = 1;
+    return mouthSm;
+  }
+
+  function eyeOpenAmt(now, action) {
+    if (action === "laugh" || action === "facepalm" || action === "sleepy" || action === "cringe") return action === "sleepy" ? 0.08 : 0.16;
+    if (now > nextBlink) {
+      blinkStart = now;
+      nextBlink = now + 2400 + Math.random() * 2600;
+    }
+    var p = (now - blinkStart) / 130;
+    if (p >= 0 && p < 1) return Math.max(0.08, Math.abs(Math.cos(p * Math.PI)));
+    return 1;
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function bone(x1, y1, x2, y2, width, color) {
+    ctx.lineCap = "round";
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = width + 5;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  function joint(x, y, rad, color) {
+    ctx.beginPath();
+    ctx.arc(x, y, rad, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = OUT;
+    ctx.stroke();
+  }
+
+  function limbsFor(action, t) {
+    var s = Math.sin(t * 0.012);
+    var d = Math.sin(t * 0.014);
+    var L = {
+      lElb: [-48, 18], lHand: [-44, 60],
+      rElb: [48, 18], rHand: [44, 60],
+      lKnee: [-16, 96], lFoot: [-18, 132],
+      rKnee: [16, 96], rFoot: [20, 132]
+    };
+    if (action === "walk") {
+      L.lElb = [-42, 10 + s * 10]; L.lHand = [-34, 50 + s * 22];
+      L.rElb = [42, 10 - s * 10]; L.rHand = [34, 50 - s * 22];
+      L.lKnee = [-10 - s * 16, 94]; L.lFoot = [-16 - s * 24, 132];
+      L.rKnee = [10 + s * 16, 94]; L.rFoot = [16 + s * 24, 132];
+    } else if (action === "sit") {
+      L.lElb = [-54, 24]; L.lHand = [-46, 52];
+      L.rElb = [54, 24]; L.rHand = [46, 52];
+      L.lKnee = [30, 78]; L.lFoot = [72, 86];
+      L.rKnee = [36, 62]; L.rFoot = [78, 70];
+    } else if (action === "laugh") {
+      L.lElb = [-36, 6]; L.lHand = [-22, 34];
+      L.rElb = [36, 6]; L.rHand = [22, 34];
+    } else if (action === "angry") {
+      L.lElb = [-40, 16]; L.lHand = [-28, 4];
+      L.rElb = [40, 16]; L.rHand = [28, 4];
+    } else if (action === "shock") {
+      L.lElb = [-34, -16]; L.lHand = [-58, -46];
+      L.rElb = [34, -16]; L.rHand = [58, -46];
+    } else if (action === "point") {
+      L.lElb = [-50, 22]; L.lHand = [-42, 58];
+      L.rElb = [74, -6]; L.rHand = [122, -20];
+    } else if (action === "facepalm") {
+      L.lElb = [-50, 20]; L.lHand = [-40, 56];
+      L.rElb = [16, -24]; L.rHand = [4, -82];
+    } else if (action === "think") {
+      L.lElb = [-50, 20]; L.lHand = [-38, 54];
+      L.rElb = [24, -6]; L.rHand = [6, -50];
+    } else if (action === "dance" || action === "hype") {
+      L.lElb = [-22 + d * 6, -30]; L.lHand = [-40, -64];
+      L.rElb = [22 - d * 6, -22]; L.rHand = [46, -60];
+      L.lKnee = [-18 + d * 10, 94]; L.lFoot = [-26 + d * 14, 132];
+      L.rKnee = [16 - d * 8, 92]; L.rFoot = [28 - d * 12, 132];
+    } else if (action === "talk") {
+      L.rElb = [36, 4]; L.rHand = [28, -18];
+    } else if (action === "sad") {
+      L.lElb = [-36, 28]; L.lHand = [-24, 70];
+      L.rElb = [36, 28]; L.rHand = [24, 70];
+    } else if (action === "sip") {
+      L.rElb = [28, -8]; L.rHand = [10, -48];
+    } else if (action === "cringe") {
+      L.lElb = [-20, 8]; L.lHand = [-8, -20];
+      L.rElb = [20, 8]; L.rHand = [8, -20];
+    } else if (action === "smug") {
+      L.lElb = [-46, 20]; L.lHand = [-36, 48];
+      L.rElb = [40, 8]; L.rHand = [18, -10];
+    } else if (action === "sleepy") {
+      L.lElb = [-30, 30]; L.lHand = [-16, 58];
+      L.rElb = [30, 30]; L.rHand = [16, 58];
+    } else if (action === "love") {
+      L.lElb = [-22, 0]; L.lHand = [-8, -16];
+      L.rElb = [22, 0]; L.rHand = [8, -16];
+    } else if (action === "confused") {
+      L.lElb = [-48, 16]; L.lHand = [-36, 40];
+      L.rElb = [18, -20]; L.rHand = [8, -62];
+    } else {
+      var idle = Math.sin(t * 0.0022);
+      L.lHand = [-44, 60 + idle * 2];
+      L.rHand = [44, 60 - idle * 2];
+    }
+    return L;
+  }
+
+  function smoothLimbs(target) {
+    var keys = ["lElb", "lHand", "rElb", "rHand", "lKnee", "lFoot", "rKnee", "rFoot"];
+    if (!limbSm) {
+      limbSm = {};
+      keys.forEach(function (k) { limbSm[k] = [target[k][0], target[k][1]]; });
+      return limbSm;
+    }
+    var mix = 1 - Math.exp(-frameDt * 9);
+    keys.forEach(function (name) {
+      limbSm[name][0] += (target[name][0] - limbSm[name][0]) * mix;
+      limbSm[name][1] += (target[name][1] - limbSm[name][1]) * mix;
+    });
+    return limbSm;
+  }
+
+  function drawMouth(x, y, open, action) {
+    var spec = normMouth(mouths[action], action);
+    ctx.save();
+    ctx.translate(x, y);
+    var smile = spec.smile;
+    var half = Math.max(6, 78 * (spec.w / 100));
+    var drop = open * (10 + spec.h * 0.45);
+    var bow = smile * 7;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.fillStyle = "#c45166";
+    ctx.strokeStyle = "#6e2433";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-half, -1);
+    ctx.quadraticCurveTo(0, -4 - bow, half, -1);
+    ctx.quadraticCurveTo(0, 1.4 - bow * 0.2, -half, -1);
+    ctx.fill();
+    ctx.stroke();
+    if (open > 0.045) {
+      ctx.fillStyle = "#2a1218";
+      ctx.beginPath();
+      ctx.moveTo(-half * 0.78, 0.2);
+      ctx.quadraticCurveTo(0, 0.4 + drop * 0.25 - bow * 0.15, half * 0.78, 0.2);
+      ctx.quadraticCurveTo(0, 1.1 + drop, -half * 0.78, 0.2);
+      ctx.fill();
+      ctx.fillStyle = "#e07a8a";
+      ctx.beginPath();
+      ctx.ellipse(0, 0.6 + drop * 0.62, half * 0.34, Math.max(1.5, drop * 0.2), 0, 0, Math.PI);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#b84358";
+    ctx.beginPath();
+    ctx.moveTo(-half * 0.92, 0.2 + drop * 0.08);
+    ctx.quadraticCurveTo(0, 3.2 + drop - bow * 0.35, half * 0.92, 0.2 + drop * 0.08);
+    ctx.quadraticCurveTo(0, -0.6 + drop * 0.3 - bow * 0.2, -half * 0.92, 0.2 + drop * 0.08);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBrows(action) {
+    ctx.strokeStyle = HAIR;
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    if (action === "angry") {
+      ctx.moveTo(-28, -112); ctx.lineTo(-8, -106);
+      ctx.moveTo(28, -112); ctx.lineTo(8, -106);
+    } else if (action === "shock") {
+      ctx.moveTo(-26, -118); ctx.quadraticCurveTo(-16, -124, -6, -116);
+      ctx.moveTo(26, -118); ctx.quadraticCurveTo(16, -124, 6, -116);
+    } else if (action === "think") {
+      ctx.moveTo(-26, -110); ctx.quadraticCurveTo(-16, -116, -6, -110);
+      ctx.moveTo(6, -112); ctx.lineTo(26, -108);
+    } else if (action === "laugh") {
+      ctx.moveTo(-24, -108); ctx.quadraticCurveTo(-16, -114, -8, -108);
+      ctx.moveTo(24, -108); ctx.quadraticCurveTo(16, -114, 8, -108);
+    } else {
+      ctx.moveTo(-26, -110); ctx.quadraticCurveTo(-16, -116, -6, -110);
+      ctx.moveTo(26, -110); ctx.quadraticCurveTo(16, -116, 6, -110);
+    }
+    ctx.stroke();
+  }
+
+  function drawEyes(action, openAmt, t) {
+    var lookX = action === "think" ? -3 : Math.sin(t * 0.0008) * 2;
+    var lookY = action === "think" ? -3 : 0;
+    var wide = action === "shock" ? 1.28 : 1;
+    var side;
+    for (var i = 0; i < 2; i++) {
+      side = i === 0 ? -16 : 16;
+      ctx.save();
+      ctx.translate(side, -96);
+      ctx.scale(wide, wide);
+      ctx.fillStyle = "#fffef8";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 12, 14 * openAmt, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = OUT;
+      ctx.stroke();
+      if (openAmt > 0.45 && action !== "laugh") {
+        ctx.fillStyle = OUT;
+        ctx.beginPath();
+        ctx.arc(lookX, lookY + 1, action === "shock" ? 5.4 : 4.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(lookX - 1.6, lookY - 1.4, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawDemo(action, t, open) {
+    var L = smoothLimbs(limbsFor(action, t));
+    var chroma = stage.classList.contains("chroma");
+    if (!chroma) {
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.beginPath();
+      ctx.ellipse(action === "sit" ? 20 : 0, 148, action === "sit" ? 54 : 40, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (action === "sit") {
+      ctx.fillStyle = "#6b4423";
+      ctx.beginPath();
+      ctx.ellipse(18, 108, 48, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = OUT;
+      ctx.stroke();
+      ctx.fillRect(4, 112, 10, 28);
+      ctx.fillRect(28, 112, 10, 28);
+    }
+    if (action === "angry") ctx.translate(Math.sin(t * 0.05) * 1.4, 0);
+    bone(-14, 58, L.lKnee[0], L.lKnee[1], 12, PANTS);
+    bone(14, 58, L.rKnee[0], L.rKnee[1], 12, PANTS);
+    bone(L.lKnee[0], L.lKnee[1], L.lFoot[0], L.lFoot[1], 11, PANTS);
+    bone(L.rKnee[0], L.rKnee[1], L.rFoot[0], L.rFoot[1], 11, PANTS);
+    joint(L.lFoot[0], L.lFoot[1], 8, SHOE);
+    joint(L.rFoot[0], L.rFoot[1], 8, SHOE);
+    roundRect(-36, -34, 72, 96, 16);
+    ctx.fillStyle = SHIRT;
+    ctx.fill();
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = OUT;
+    ctx.stroke();
+    ctx.fillStyle = "#e23b32";
+    ctx.beginPath();
+    ctx.moveTo(-7, -30);
+    ctx.lineTo(7, -30);
+    ctx.lineTo(3, 10);
+    ctx.lineTo(0, 16);
+    ctx.lineTo(-3, 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#222";
+    ctx.fillRect(10, -6, 6, 11);
+    ctx.beginPath();
+    ctx.arc(13, -8, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = SKIN;
+    roundRect(-8, -48, 16, 18, 4);
+    ctx.fill();
+    ctx.strokeStyle = OUT;
+    ctx.stroke();
+    joint(-40, -88, 10, SKIN);
+    joint(40, -88, 10, SKIN);
+    ctx.fillStyle = HAIR;
+    ctx.beginPath();
+    ctx.ellipse(0, -112, 40, 26, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(22, -118, 12, 9, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = SKIN;
+    ctx.beginPath();
+    ctx.ellipse(0, -86, 40, 44, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = OUT;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(214, 140, 60, 0.35)";
+    ctx.beginPath();
+    ctx.ellipse(-22, -74, 7, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(22, -74, 7, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(10, -82);
+    ctx.quadraticCurveTo(24, -76, 12, -68);
+    ctx.stroke();
+    drawEyes(action, eyeOpenAmt(t, action), t);
+    drawBrows(action);
+    var m = mouths[action] || mouths.idle;
+    if (lipView[action]) drawFittedLips(action, open, 150);
+    else drawMouth(m.x, m.y, open, action);
+    bone(-30, -8, L.lElb[0], L.lElb[1], 11, SKIN);
+    bone(L.lElb[0], L.lElb[1], L.lHand[0], L.lHand[1], 9, SKIN);
+    bone(30, -8, L.rElb[0], L.rElb[1], 11, SKIN);
+    bone(L.rElb[0], L.rElb[1], L.rHand[0], L.rHand[1], 9, SKIN);
+    joint(L.lHand[0], L.lHand[1], action === "angry" ? 7 : 8, SKIN);
+    joint(L.rHand[0], L.rHand[1], action === "point" ? 7 : (action === "facepalm" ? 12 : 8), SKIN);
+  }
+
+  function drawFittedLips(action, open, bodyW) {
+    var lip = lipView[action];
+    if (!lip || !lip.width) return;
+    var m = normMouth(mouths[action], action);
+    var targetW = Math.max(10, bodyW * (m.w / 100));
+    var sc = targetW / lip.width;
+    var dw = lip.width * sc;
+    var dh = lip.height * sc;
+    var x = m.x - dw / 2;
+    var y = m.y - dh * 0.42;
+    var openAmt = clamp(open, 0, 1);
+    if (openAmt < 0.04) {
+      ctx.drawImage(lip, x, y, dw, dh);
+      return;
+    }
+    var split = Math.max(1, Math.round(lip.height * 0.46));
+    var drop = dh * 0.38 * openAmt;
+    ctx.drawImage(lip, 0, 0, lip.width, split, x, y - 1, dw, split * sc);
+    ctx.fillStyle = "#2a1218";
+    ctx.beginPath();
+    ctx.ellipse(m.x, m.y + drop * 0.2, dw * 0.26, Math.max(2, drop * 0.42), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#d46a7a";
+    ctx.beginPath();
+    ctx.ellipse(m.x, m.y + drop * 0.55, dw * 0.14, Math.max(1.4, drop * 0.16), 0, 0, Math.PI);
+    ctx.fill();
+    ctx.drawImage(lip, 0, split, lip.width, lip.height - split, x, y + split * sc + drop, dw, (lip.height - split) * sc);
+  }
+
+  function drawSprite(sprite, action, open) {
+    var targetH = 320;
+    var aspect = sprite.width / Math.max(1, sprite.height);
+    var h = targetH;
+    var w = h * aspect;
+    var dx = -w / 2;
+    var dy = -h + 36;
+    var pw = Math.max(2, Math.round(w));
+    var ph = Math.max(2, Math.round(h));
+    var openAmt = clamp(open, 0, 1);
+    var m = normMouth(mouths[action], action);
+    if (lipView[action]) {
+      ctx.drawImage(sprite, dx, dy, w, h);
+      drawFittedLips(action, openAmt, w);
+      return;
+    }
+    if (openAmt < 0.04) {
+      ctx.drawImage(sprite, dx, dy, w, h);
+      return;
+    }
+    var curve = m.smile;
+    if (!warpC) warpC = document.createElement("canvas");
+    if (warpC.width !== pw || warpC.height !== ph) {
+      warpC.width = pw;
+      warpC.height = ph;
+    }
+    if (!warpB) warpB = document.createElement("canvas");
+    if (warpB.width !== pw || warpB.height !== ph) {
+      warpB.width = pw;
+      warpB.height = ph;
+    }
+    var wx = warpC.getContext("2d", { willReadFrequently: true });
+    var bx = warpB.getContext("2d", { willReadFrequently: true });
+    wx.setTransform(1, 0, 0, 1, 0, 0);
+    bx.setTransform(1, 0, 0, 1, 0, 0);
+    bx.clearRect(0, 0, pw, ph);
+    bx.drawImage(sprite, 0, 0, pw, ph);
+    wx.clearRect(0, 0, pw, ph);
+    wx.drawImage(warpB, 0, 0);
+
+    var lipX = clamp(Math.round(m.x - dx), 6, pw - 6);
+    var lipY = clamp(Math.round(m.y - dy), 6, ph - 6);
+    var zoneW = Math.round(clamp(w * (m.w / 100) * 1.35, 16, w * 0.55));
+    var zoneH = Math.round(clamp(h * (m.h / 100), 10, h * 0.28));
+    var drop = Math.round(clamp(zoneH * 0.62 * openAmt, 0, 26));
+    var bow = Math.round(curve * Math.min(12, zoneH * 0.55));
+    var x0 = clamp(Math.round(lipX - zoneW / 2), 0, pw - 4);
+    var srcW = Math.min(zoneW, pw - x0);
+    var upperH = Math.max(4, Math.round(zoneH * 0.2));
+    var img = bx.getImageData(0, 0, pw, ph);
+    var srcPx = img.data;
+    var out = wx.createImageData(pw, ph);
+    var od = out.data;
+    od.set(srcPx);
+    var yTop = Math.max(0, lipY - Math.max(upperH, Math.abs(bow) + 2));
+    var yBot = Math.min(ph, lipY + zoneH + drop);
+    var x1 = Math.min(pw, x0 + srcW);
+    var halfW = Math.max(1, (x1 - x0) / 2);
+    for (var y = yTop; y < yBot; y++) {
+      for (var x = x0; x < x1; x++) {
+        var nx = (x - lipX) / halfW;
+        var corner = Math.max(0, Math.abs(nx) - 0.2) / 0.8;
+        var arc = Math.round(bow * corner);
+        var sy = y < lipY ? y + 1 : y - drop;
+        if (y >= lipY - upperH && y <= lipY + 2) sy += arc;
+        var di = (y * pw + x) * 4;
+        if (sy < 0 || sy >= ph || (y >= lipY && sy < lipY)) {
+          if (y >= lipY && y < lipY + drop) {
+            od[di] = 42; od[di + 1] = 18; od[di + 2] = 24; od[di + 3] = 255;
+          }
+          continue;
+        }
+        var si = (sy * pw + x) * 4;
+        od[di] = srcPx[si];
+        od[di + 1] = srcPx[si + 1];
+        od[di + 2] = srcPx[si + 2];
+        od[di + 3] = srcPx[si + 3];
+      }
+    }
+    wx.putImageData(out, 0, 0);
+    var mw = Math.max(6, (w * (m.w / 100)) / 2);
+    var mh = Math.max(2, drop * 0.72);
+    if (drop > 1) {
+      wx.save();
+      wx.beginPath();
+      wx.ellipse(lipX, lipY + mh * 0.35, mw * 0.72, mh, 0, 0, Math.PI * 2);
+      wx.clip();
+      wx.fillStyle = "#2c1418";
+      wx.fillRect(lipX - mw, lipY - 1, mw * 2, drop + 6);
+      wx.fillStyle = "#d46a7a";
+      wx.beginPath();
+      wx.ellipse(lipX, lipY + drop * 0.62, mw * 0.36, Math.max(1.6, drop * 0.22), 0, 0, Math.PI);
+      wx.fill();
+      wx.restore();
+    }
+    if (drop > 1) {
+      wx.strokeStyle = "#8a3044";
+      wx.lineWidth = Math.max(1.6, pw * 0.011);
+      wx.lineCap = "round";
+      wx.beginPath();
+      wx.moveTo(lipX - mw, lipY);
+      wx.quadraticCurveTo(lipX, lipY - 2 - bow, lipX + mw, lipY);
+      wx.stroke();
+      wx.beginPath();
+      wx.moveTo(lipX - mw * 0.92, lipY + Math.max(1, drop * 0.12));
+      wx.quadraticCurveTo(lipX, lipY + drop * 0.55 - bow * 0.25, lipX + mw * 0.92, lipY + Math.max(1, drop * 0.12));
+      wx.stroke();
+    }
+
+    ctx.drawImage(warpC, dx, dy, w, h);
+  }
+
+  function drawMarks() {
+    if (stage.classList.contains("chroma")) return;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.lineWidth = 2;
+    [0.2, 0.5, 0.8].forEach(function (p) {
+      var x = cssW * p;
+      ctx.beginPath();
+      ctx.moveTo(x, cssH - 16);
+      ctx.lineTo(x, cssH - 5);
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  var smileDrag = false;
+
+  function smileLabel(v) {
+    if (v >= 0.35) return "улыбка";
+    if (v <= -0.35) return "грусть";
+    if (v >= 0.12) return "лёгкая";
+    if (v <= -0.12) return "вниз";
+    return "ровно";
+  }
+
+  function syncSmileUi() {
+    if (smileDrag) return;
+    var pose = ACTIONS.indexOf(desiredAction) >= 0 ? desiredAction : "idle";
+    var m = normMouth(mouths[pose], pose);
+    mouths[pose] = m;
+    if ($("smilePose")) $("smilePose").textContent = "Улыбка кадра «" + (ACTION_RU[pose] || pose) + "»";
+    if ($("smileW") && document.activeElement !== $("smileW")) {
+      $("smileW").value = String(Math.round(m.w));
+      $("smileWVal").textContent = Math.round(m.w) + "%";
+    }
+    if ($("smileH") && document.activeElement !== $("smileH")) {
+      $("smileH").value = String(Math.round(m.h));
+      $("smileHVal").textContent = Math.round(m.h) + "%";
+    }
+    if ($("smileC") && document.activeElement !== $("smileC")) {
+      $("smileC").value = String(Math.round(m.smile * 100));
+      $("smileCVal").textContent = smileLabel(m.smile);
+    }
+  }
+
+  function writeSmileFromUi() {
+    var pose = ACTIONS.indexOf(desiredAction) >= 0 ? desiredAction : "idle";
+    var m = normMouth(mouths[pose], pose);
+    m.w = clamp(Number($("smileW").value), 8, 48);
+    m.h = clamp(Number($("smileH").value), 5, 30);
+    m.smile = clamp(Number($("smileC").value) / 100, -1, 1);
+    mouths[pose] = m;
+    $("smileWVal").textContent = Math.round(m.w) + "%";
+    $("smileHVal").textContent = Math.round(m.h) + "%";
+    $("smileCVal").textContent = smileLabel(m.smile);
+    if ($("smilePose")) $("smilePose").textContent = "Улыбка кадра «" + (ACTION_RU[pose] || pose) + "»";
+    refreshPromptUi();
+    persistLocal();
+  }
+
+  function setPoseUi(action) {
+    document.querySelectorAll("[data-pose]").forEach(function (btn) {
+      btn.classList.toggle("on", btn.getAttribute("data-pose") === action);
+    });
+    if ($("chkCalib").checked) {
+      $("calibHint").hidden = false;
+      $("calibHint").textContent = "Клик — центр губ «" + (ACTION_RU[action] || action) + "». Размер — ползунки этого кадра.";
+    }
+    syncSmileUi();
+  }
+
+  var viewFitK = 1;
+  var viewShiftY = 0;
+  var ttsAudio = null;
+
+  function updateViewFit(hasSprite) {
+    var sc = Math.abs(charScale) * (1 + Math.max(0, zoomAmp));
+    var above = (hasSprite ? 292 : 148) * sc;
+    var below = (hasSprite ? 46 : 158) * sc;
+    var anchor = (smoothReady ? smoothY : charY) + smoothOffY;
+    var padTop = 58;
+    var padBot = 14;
+    var shift = 0;
+    var top = anchor - above;
+    var bot = anchor + below;
+    if (top < padTop) shift = padTop - top;
+    if (bot + shift > cssH - padBot) shift -= bot + shift - (cssH - padBot);
+    var room = Math.max(80, cssH - padTop - padBot);
+    var span = above + below;
+    viewFitK = span > room ? room / span : 1;
+    viewShiftY = shift;
+  }
+
+  function screenToLocal(px, py) {
+    var d = deform(animT);
+    var face = Math.abs(facingSm) < 0.45 ? (facing < 0 ? -0.45 : 0.45) : facingSm;
+    var sx = face * charScale * d.sx * d.cam * viewFitK;
+    var sy = charScale * d.sy * d.cam * viewFitK;
+    if (Math.abs(sx) < 0.001 || Math.abs(sy) < 0.001) return { x: 0, y: -66 };
+    var ox = smoothReady ? smoothX : charX;
+    var oy = (smoothReady ? smoothY + smoothOffY : charY + d.offY) + viewShiftY;
+    return { x: (px - ox) / sx, y: (py - oy) / sy };
+  }
+
+  function resize() {
+    var rect = stage.getBoundingClientRect();
+    cssW = Math.max(1, rect.width);
+    cssH = Math.max(1, rect.height);
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    charX = charXR * cssW;
+    charY = charYR * cssH;
+  }
+
+  function pointerCss(e) {
+    var r = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (cssW / Math.max(1, r.width)),
+      y: (e.clientY - r.top) * (cssH / Math.max(1, r.height))
+    };
+  }
+
+  function tick(now) {
+    var dt = Math.min(0.05, ((now - animT) / 1000) || 0.016);
+    frameDt = dt;
+    animT = now;
+    if (waitingApi) {
+      walking = false;
+      walkVel += (0 - walkVel) * (1 - Math.exp(-dt * 6));
+      visualAction = apiWaitPose || "think";
+    } else if (!dragging && moveTo !== "stay" && cssW > 0) {
+      var tx = moveTo === "left" ? cssW * 0.2 : moveTo === "right" ? cssW * 0.8 : cssW * 0.5;
+      var dx = tx - charX;
+      if (Math.abs(dx) > 6) {
+        var dir = Math.sign(dx);
+        facing = dir < 0 ? -1 : 1;
+        var targetV = dir * Math.min(150, Math.abs(dx) * 2.4);
+        walkVel += (targetV - walkVel) * (1 - Math.exp(-dt * 4.5));
+        charX += walkVel * dt;
+        charXR = charX / cssW;
+        walking = true;
+        visualAction = ACTIONS.indexOf("walk") >= 0 ? "walk" : desiredAction;
+      } else {
+        charX += (tx - charX) * (1 - Math.exp(-dt * 8));
+        charXR = charX / cssW;
+        walkVel += (0 - walkVel) * (1 - Math.exp(-dt * 8));
+        if (Math.abs(tx - charX) < 1.5) {
+          charX = tx;
+          walking = false;
+          moveTo = "stay";
+        }
+        visualAction = desiredAction;
+      }
+    } else {
+      walking = false;
+      walkVel += (0 - walkVel) * (1 - Math.exp(-dt * 8));
+      visualAction = desiredAction;
+    }
+    if (visualAction !== lastVisual) {
+      lastVisual = visualAction;
+      squashT0 = now;
+      squashUntil = now + 220;
+      setPoseUi(visualAction);
+    }
+    if (!smoothReady || dragging) {
+      smoothX = charX;
+      smoothY = charY;
+      smoothReady = true;
+    } else {
+      var follow = 1 - Math.exp(-dt * 8);
+      smoothX += (charX - smoothX) * follow;
+      smoothY += (charY - smoothY) * follow;
+    }
+    facingSm += (facing - facingSm) * (1 - Math.exp(-dt * 7));
+    var targetOff = poseOffset(visualAction, now);
+    smoothOffY += (targetOff - smoothOffY) * (1 - Math.exp(-dt * 6));
+    var wantZoom = now < zoomUntil ? 0.12 : 0;
+    zoomAmp += (wantZoom - zoomAmp) * (1 - Math.exp(-dt * 5));
+    if (nextBlink === 0) nextBlink = now + 1200;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawMarks();
+    var d = deform(now);
+    var face = Math.abs(facingSm) < 0.45 ? (facing < 0 ? -0.45 : 0.45) : facingSm;
+    var poseForSprite = visualAction;
+    if (ACTIONS.indexOf(poseForSprite) < 0 && poseForSprite === "walk" && ACTIONS.indexOf("hype") >= 0) poseForSprite = "hype";
+    var idx = ACTIONS.indexOf(poseForSprite);
+    var sprite = idx >= 0 ? viewSprites[idx] : null;
+    updateViewFit(!!sprite);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(smoothX, smoothY + smoothOffY + viewShiftY);
+    ctx.scale(face * charScale * d.sx * d.cam * viewFitK, charScale * d.sy * d.cam * viewFitK);
+    var open = mouthAmount(now);
+    if (sprite !== shownSprite) {
+      prevSprite = shownSprite;
+      prevAction = shownAction;
+      shownSprite = sprite;
+      shownAction = poseForSprite;
+      poseBlend = prevSprite ? 0 : 1;
+    }
+    poseBlend = Math.min(1, poseBlend + dt / 0.28);
+    if (sprite && prevSprite && poseBlend < 1) {
+      ctx.save();
+      ctx.globalAlpha = 1 - poseBlend;
+      drawSprite(prevSprite, prevAction || poseForSprite, open * 0.35);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = poseBlend;
+      drawSprite(sprite, poseForSprite, open);
+      ctx.restore();
+    } else if (sprite) drawSprite(sprite, poseForSprite, open);
+    else drawDemo(visualAction, now, open);
+    sampleAudio();
+    if ($("chkCalib").checked) {
+      var pose = ACTIONS.indexOf(desiredAction) >= 0 ? desiredAction : visualAction;
+      var m = normMouth(mouths[pose], pose);
+      var sprIdx = ACTIONS.indexOf(pose);
+      var spr = sprIdx >= 0 ? viewSprites[sprIdx] : null;
+      var bodyH = 320;
+      var bodyW = spr ? bodyH * (spr.width / Math.max(1, spr.height)) : 150;
+      var lipW = bodyW * (m.w / 100);
+      var lipH = Math.max(4, bodyH * (m.h / 100) * 0.28);
+      var bow = m.smile * Math.min(14, lipH);
+      ctx.strokeStyle = "#ff4d3a";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(m.x, m.y, Math.max(6, lipW / 2), lipH / 2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(m.x - lipW / 2, m.y);
+      ctx.quadraticCurveTo(m.x, m.y - bow, m.x + lipW / 2, m.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(m.x - 10, m.y);
+      ctx.lineTo(m.x + 10, m.y);
+      ctx.moveTo(m.x, m.y - 10);
+      ctx.lineTo(m.x, m.y + 10);
+      ctx.stroke();
+    }
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    try { tick(now); } catch (err) {
+      if (!frameErr) {
+        frameErr = true;
+        log("Кадр сцены: " + (err && err.message ? err.message : err), "err");
+      }
+    }
+  }
+
+  function showTab(n) {
+    document.querySelectorAll(".tab").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-tab") === String(n));
+    });
+    document.querySelectorAll(".panel").forEach(function (p) {
+      p.hidden = p.getAttribute("data-panel") !== String(n);
+    });
+  }
+
+  function bind() {
+    document.querySelectorAll(".tab").forEach(function (b) {
+      b.addEventListener("click", function () { showTab(b.getAttribute("data-tab")); });
+    });
+    $("dock").addEventListener("input", function () {
+      if (hydrating) return;
+      $("rateVal").textContent = Number($("rate").value).toFixed(2);
+      $("pitchVal").textContent = Number($("pitch").value).toFixed(2);
+      $("intervalVal").textContent = String($("interval").value);
+      $("threshVal").textContent = String($("diffThresh").value);
+      $("chromaVal").textContent = String($("chromaSens").value);
+      $("audioThreshVal").textContent = String($("audioThresh").value);
+      persistLocal();
+    });
+    $("dock").addEventListener("change", function () {
+      if (hydrating) return;
+      readSettingsFromDom();
+      persistLocal();
+    });
+    $("chromaSens").addEventListener("input", function () {
+      clearTimeout($("chromaSens")._t);
+      $("chromaSens")._t = setTimeout(reprocessSprites, 80);
+    });
+    $("modelSel").addEventListener("change", function () {
+      $("customWrap").hidden = $("modelSel").value !== "custom";
+    });
+    $("chkChroma").addEventListener("change", function () {
+      stage.classList.toggle("chroma", $("chkChroma").checked);
+      persistLocal();
+    });
+    $("chkCalib").addEventListener("change", function () {
+      var on = $("chkCalib").checked;
+      canvas.classList.toggle("calib", on);
+      $("calibHint").hidden = !on;
+      if (on) $("calibHint").textContent = "Клик — центр губ. Размер и изгиб — ползунки выбранного кадра.";
+      syncSmileUi();
+    });
+    ["smileW", "smileH", "smileC"].forEach(function (id) {
+      var el = $(id);
+      el.addEventListener("pointerdown", function () { smileDrag = true; });
+      el.addEventListener("input", function () {
+        smileDrag = true;
+        writeSmileFromUi();
+      });
+      el.addEventListener("change", function () { smileDrag = false; });
+      el.addEventListener("pointerup", function () { smileDrag = false; });
+    });
+    $("listenMic").addEventListener("change", function () {
+      if (hydrating) return;
+      readSettingsFromDom();
+      if (settings.listenMic) startListen();
+      else stopListen();
+      persistLocal();
+    });
+    $("btnObs").addEventListener("click", function () { setObs(true); });
+    $("obsExit").addEventListener("click", function () { setObs(false); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && document.body.classList.contains("obs")) setObs(false);
+    });
+    $("btnApplyVideo").addEventListener("click", applyVideoUrl);
+    $("btnCapture").addEventListener("click", function () { captureScreen(); });
+    $("btnScaleMinus").addEventListener("click", function () {
+      charScale = clamp(charScale * 0.92, 0.35, 2.8);
+      updateScaleLabel();
+      persistLocal();
+    });
+    $("btnScalePlus").addEventListener("click", function () {
+      charScale = clamp(charScale * 1.08, 0.35, 2.8);
+      updateScaleLabel();
+      persistLocal();
+    });
+    $("fileGrid").addEventListener("change", function () {
+      var f = $("fileGrid").files && $("fileGrid").files[0];
+      if (f) onGridFile(f).catch(function (err) { log(err.message || String(err), "err"); });
+    });
+    $("fileSprites").addEventListener("change", function () {
+      var files = $("fileSprites").files;
+      if (files && files.length) onSpriteFiles(files).catch(function (err) { log(err.message || String(err), "err"); });
+    });
+    $("btnAutoMap").addEventListener("click", async function () {
+      readSettingsFromDom();
+      if (!Object.keys(spriteMap).some(function (k) { return !!spriteMap[k]; })) { log("Сначала загрузите кадры", "err"); return; }
+      if (!String(settings.key || "").trim()) { log("Для разметки нужен API-ключ", "err"); return; }
+      if (isBusy) { log("Подождите, персонаж ещё думает", "skip"); return; }
+      var picture = buildCollage();
+      log("Коллаж поз ушёл на разметку одной картинкой", "info");
+      try {
+        var poseList = ACTIONS.join(", ");
+        var data = await complete([{
+          role: "user",
+          content: [
+            { type: "text", text: "На изображении коллаж кадров персонажа. В углу номера с нуля. Верни только JSON: ключ — номер строкой, значение — одно из " + poseList + ". Каждое действие не больше одного раза." },
+            { type: "image_url", image_url: { url: picture } }
+          ]
+        }]);
+        picture = "";
+        accountUsage(data);
+        var raw = extractText(data);
+        log("Разметка: " + raw.slice(0, 320), "ai");
+        remap(parseMap(raw));
+        log("Позы разложены по действиям", "ai");
+      } catch (err) {
+        log(String(err && err.message ? err.message : err), "err");
+      }
+    });
+    $("btnCopyPrompt").addEventListener("click", async function () {
+      var text = $("genPrompt").value;
+      try {
+        await navigator.clipboard.writeText(text);
+        log("Промпт персонажа скопирован", "ai");
+      } catch (err) {
+        $("genPrompt").focus();
+        $("genPrompt").select();
+        log("Буфер недоступен — промпт выделен в поле, скопируйте вручную", "skip");
+      }
+    });
+    $("btnCopyLipPrompt").addEventListener("click", async function () {
+      refreshPromptUi();
+      var text = $("genLipPrompt").value;
+      try {
+        await navigator.clipboard.writeText(text);
+        log("Промпт губ скопирован", "ai");
+      } catch (err) {
+        $("genLipPrompt").focus();
+        $("genLipPrompt").select();
+        log("Буфер недоступен — промпт губ выделен в поле", "skip");
+      }
+    });
+    $("fileLips").addEventListener("change", function () {
+      var f = $("fileLips").files && $("fileLips").files[0];
+      if (f) onLipFile(f).catch(function (err) { log(err.message || String(err), "err"); });
+    });
+    $("btnToggleKey").addEventListener("click", function () {
+      var input = $("apiKey");
+      var show = input.type === "password";
+      input.type = show ? "text" : "password";
+      $("btnToggleKey").textContent = show ? "Скрыть" : "Показать";
+    });
+    $("btnTestApi").addEventListener("click", async function () {
+      readSettingsFromDom();
+      if (!String(settings.key || "").trim()) { log("Нет API-ключа", "err"); return; }
+      log("Тест API · " + currentModel(), "info");
+      try {
+        var data = await complete([
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: "Проверка связи. Доступные позы: " + ACTIONS.join(", ") + ". Только JSON." }
+        ]);
+        accountUsage(data);
+        log("Ответ: " + extractText(data).slice(0, 240), "ai");
+      } catch (err) {
+        log(String(err && err.message ? err.message : err), "err");
+      }
+    });
+    $("voiceEngine").addEventListener("change", function () {
+      syncVoiceEngineUi();
+      readSettingsFromDom();
+      persistLocal();
+    });
+    $("ttsModel").addEventListener("change", function () {
+      syncVoiceEngineUi();
+      readSettingsFromDom();
+      persistLocal();
+    });
+    $("btnVoices").addEventListener("click", loadVoices);
+    $("voiceSel").addEventListener("change", function () {
+      settings.voiceURI = $("voiceSel").value;
+      persistLocal();
+    });
+    $("btnTestVoice").addEventListener("click", function () {
+      readSettingsFromDom();
+      dropSpeech = false;
+      speak("Проверка связи. Я на эфире, диван подо мной, сарказм при мне.");
+    });
+    $("btnStopVoice").addEventListener("click", function () {
+      dropSpeech = true;
+      epoch += 1;
+      if (window.speechSynthesis) speechSynthesis.cancel();
+      stopTalking();
+      isSpeaking = false;
+      mouthTarget = 0;
+      phonemeSeq = [];
+      cooldownUntil = Date.now() + 200;
+      setStatus(streaming ? "Ожидание" : "Ожидание");
+      log("Речь остановлена", "skip");
+    });
+    $("btnNow").addEventListener("click", function () {
+      readSettingsFromDom();
+      log("Внеочередной комментарий", "info");
+      requestCycle({ force: true, reason: "now", priority: 1 });
+    });
+    $("btnSend").addEventListener("click", function () {
+      readSettingsFromDom();
+      var text = $("myMsg").value.trim();
+      if (!text) return;
+      $("myMsg").value = "";
+      if (!settings.readMine) {
+        log("«Читать мои сообщения» выключено", "skip");
+        return;
+      }
+      pushChat("Вы", text);
+    });
+    $("myMsg").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") $("btnSend").click();
+    });
+    $("btnThrow").addEventListener("click", function () {
+      var pair = THROWS[Math.floor(Math.random() * THROWS.length)];
+      pushChat(pair[0], pair[1]);
+    });
+    $("btnStream").addEventListener("click", function () {
+      if (streaming) stopStream();
+      else startStream();
+    });
+    $("btnClearLog").addEventListener("click", function () { $("logBody").replaceChildren(); });
+    $("btnDownloadPilot").addEventListener("click", downloadPilot);
+    $("btnExport").addEventListener("click", exportPreset);
+    $("btnImport").addEventListener("click", function () { $("importFile").click(); });
+    $("importFile").addEventListener("change", function () {
+      var f = $("importFile").files && $("importFile").files[0];
+      if (!f) return;
+      readFileText(f).then(function (text) {
+        applyPreset(JSON.parse(text));
+        log("Пресет импортирован", "ai");
+      }).catch(function (err) {
+        log("Импорт не удался: " + (err.message || err), "err");
+      });
+      $("importFile").value = "";
+    });
+    canvas.addEventListener("pointerdown", function (e) {
+      var p = pointerCss(e);
+      if ($("chkCalib").checked) {
+        var loc = screenToLocal(p.x, p.y);
+        var pose = ACTIONS.indexOf(desiredAction) >= 0 ? desiredAction : visualAction;
+        var m = normMouth(mouths[pose], pose);
+        m.x = Math.round(loc.x);
+        m.y = Math.round(loc.y);
+        m.manual = true;
+        mouths[pose] = m;
+        log("Рот «" + (ACTION_RU[pose] || pose) + "»: " + m.x + ", " + m.y + ", ширина " + Math.round(m.w) + "%", "ai");
+        syncSmileUi();
+        refreshPromptUi();
+        persistLocal();
+        return;
+      }
+      dragging = true;
+      moveTo = "stay";
+      dragDX = p.x - charX;
+      dragDY = p.y - charY;
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    canvas.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      var p = pointerCss(e);
+      charX = clamp(p.x - dragDX, 24, Math.max(24, cssW - 24));
+      charY = clamp(p.y - dragDY, 40, Math.max(40, cssH - 20));
+      charXR = charX / cssW;
+      charYR = charY / cssH;
+    });
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      persistLocal();
+    }
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+    canvas.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var factor = e.deltaY < 0 ? 1.06 : 0.94;
+      charScale = clamp(charScale * factor, 0.35, 2.8);
+      updateScaleLabel();
+      persistLocal();
+    }, { passive: false });
+    window.addEventListener("resize", resize);
+    if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+    if (window.speechSynthesis) {
+      speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+    }
+  }
+
+  function buildGenPrompt() {
+    var legacy = gridMode === "legacy";
+    var list = legacy ? ACTIONS_10 : ACTIONS_16;
+    var lines = [
+      "Нарисуй одного и того же оригинального 2D-персонажа (не копируй известных героев): жёлтая кожа, крупная голова, большие глаза, простой торс, толстый чёрный контур, плоские цвета.",
+      "Фон каждой ячейки строго #00FF00, без теней на фоне и без градиента.",
+      legacy
+        ? "Один лист: сетка 5 колонок на 2 ряда."
+        : "Один лист: сетка 4 колонки на 4 ряда.",
+      "Персонаж в полный рост по центру ячейки, одинаковый масштаб во всех ячейках: 92% высоты ячейки.",
+      "Зелёные поля слева и справа одинаковые и не шире 6% ширины ячейки, чтобы ширина кадра почти совпадала с шириной персонажа.",
+      "В левом верхнем углу каждой ячейки крупная белая цифра с чёрной обводкой. Кроме цифр никакого текста.",
+      "ЛИЦО БЕЗ ГУБ. На месте рта только гладкая кожа того же цвета. Не рисуй линию губ, зубы, язык и дыру.",
+      "Губы будут на втором листе, студия сама наложит их. Руки и кружка не закрывают место рта.",
+      "Позы:"
+    ];
+    list.forEach(function (a, i) {
+      lines.push(i + " " + a + " — " + (POSE_HINT[a] || a) + ". Рот не рисовать.");
+    });
+    return lines.join("\n");
+  }
+
+  function buildLipPrompt() {
+    var legacy = gridMode === "legacy";
+    var list = legacy ? ACTIONS_10 : ACTIONS_16;
+    var master = normMouth(mouths.idle, "idle");
+    var w = Math.round(master.w);
+    var lines = [
+      "Нарисуй ТОЛЬКО закрытые губы того же оригинального 2D-персонажа: жёлтая кожа вокруг рта, губы чуть темнее, толстый чёрный контур, плоские цвета. Не копируй известных героев.",
+      "Никакого лица целиком, глаз, тела и волос. В кадре только рот крупно: губы и немного кожи вокруг.",
+      "Фон каждой ячейки строго #00FF00, без теней и градиента.",
+      legacy
+        ? "Один лист: сетка 5 колонок на 2 ряда. Порядок и цифры совпадают с листом персонажа."
+        : "Один лист: сетка 4 колонки на 4 ряда. Порядок и цифры совпадают с листом персонажа.",
+      "Губы по центру ячейки и занимают около 46% её ширины. На всех кадрах одна и та же ширина.",
+      "Закрытый рот, без зубов, языка и чёрной дыры. Студия сама приоткроет эти губы.",
+      "В левом верхнем углу крупная белая цифра с чёрной обводкой. Кроме цифр никакого текста.",
+      "Ширина губ относительно персонажа, под которую их подожмут: " + w + "%.",
+      "Позы, рисуй только губы:"
+    ];
+    list.forEach(function (a, i) {
+      var smile = normMouth(mouths[a], a).smile;
+      lines.push(i + " " + a + " — " + smileWord(smile) + ", ширина одинаковая.");
+    });
+    return lines.join("\n");
+  }
+
+  function refreshPromptUi() {
+    var legacy = gridMode === "legacy";
+    if ($("genPrompt")) $("genPrompt").value = buildGenPrompt();
+    if ($("genLipPrompt")) $("genLipPrompt").value = buildLipPrompt();
+    if ($("btnCopyPrompt")) $("btnCopyPrompt").textContent = legacy ? "Промпт персонажа, 10" : "Промпт персонажа, 16";
+    if ($("btnCopyLipPrompt")) $("btnCopyLipPrompt").textContent = legacy ? "Промпт губ, 10" : "Промпт губ, 16";
+    if ($("gridFileLabel")) {
+      var caption = $("gridFileLabel").childNodes[0];
+      if (caption) caption.textContent = legacy
+        ? "Сетка 5×2 (10 поз слева направо, сверху вниз)"
+        : "Сетка 4×4 (16 поз слева направо, сверху вниз)";
+    }
+    if ($("spriteFileLabel")) {
+      var cap2 = $("spriteFileLabel").childNodes[0];
+      if (cap2) cap2.textContent = legacy ? "Или до 10 отдельных файлов по порядку поз" : "Или до 16 отдельных файлов по порядку поз";
+    }
+    var grid = $("poseGrid");
+    if (grid) {
+      grid.classList.toggle("g10", legacy);
+      grid.classList.toggle("g16", !legacy);
+    }
+  }
+
+  function renderPoseGrid() {
+    var grid = $("poseGrid");
+    if (!grid) return;
+    grid.replaceChildren();
+    refreshPromptUi();
+    ACTIONS.forEach(function (a) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("data-pose", a);
+      btn.textContent = ACTION_RU[a] || a;
+      btn.addEventListener("click", function () { setPose(a); });
+      grid.appendChild(btn);
+    });
+    refreshPoseDots();
+    setPoseUi(visualAction);
+  }
+
+  function probeDiff() {
+    if (!videoReady() || !prevSent) return 0;
+    try {
+      diffCtx.drawImage(video, 0, 0, 32, 18);
+      var img = diffCtx.getImageData(0, 0, 32, 18);
+      return pixelDiff(prevSent, img.data);
+    } catch (err) {
+      return 0;
+    }
+  }
+
+  function streamTick() {
+    if (!streaming) return;
+    if (isBusy || voiceBusy()) return;
+    readSettingsFromDom();
+    if (pendingLines.length) {
+      requestCycle({ force: true, reason: "chat", priority: 1 });
+      return;
+    }
+    if (Date.now() - lastDiffProbe > 1600) {
+      lastDiffProbe = Date.now();
+      var diff = probeDiff();
+      if (diff >= 0.35 && Date.now() - lastSpikeAt > 4500) {
+        lastSpikeAt = Date.now();
+        log("Сильный сдвиг кадра " + Math.round(diff * 100) + "%", "meta");
+        requestCycle({ force: true, reason: "diff", priority: 2 });
+        return;
+      }
+    }
+    if (Date.now() < cooldownUntil) return;
+    if (Date.now() - lastCycleAt >= settings.interval * 1000) {
+      requestCycle({ force: false, reason: "time", priority: 3 });
+    }
+  }
+
+  function init() {
+    stage = $("stage");
+    canvas = $("scene");
+    ctx = canvas.getContext("2d");
+    video = $("bgVideo");
+    cap = document.createElement("canvas");
+    cap.width = 448;
+    cap.height = 252;
+    capCtx = cap.getContext("2d", { willReadFrequently: true });
+    diffC = document.createElement("canvas");
+    diffC.width = 32;
+    diffC.height = 18;
+    diffCtx = diffC.getContext("2d", { willReadFrequently: true });
+    renderPoseGrid();
+    bind();
+    loadLocal();
+    if (!settings.personality) settings.personality = $("personality").value;
+    refreshPromptUi();
+    resize();
+    updateScaleLabel();
+    setPoseUi(visualAction || "idle");
+    renderStats();
+    paintMeter();
+    requestAnimationFrame(frame);
+    setInterval(streamTick, 400);
+    log("Пилот 2 готов. Челюсть на спрайте, 16 поз, звук захвата и память сюжета. Ключ API — вкладка 2.", "ai");
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
