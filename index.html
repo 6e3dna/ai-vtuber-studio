@@ -1044,12 +1044,19 @@ function push(user, text) {
     saveTimer = setTimeout(saveNow, 220);
   }
 
+  var memStore = {};
+
+  function storageGet(key) {
+    try { return localStorage.getItem(key); } catch (err) { return memStore[key] || null; }
+  }
+
+  function storageSet(key, value) {
+    memStore[key] = value;
+    try { localStorage.setItem(key, value); } catch (err) {}
+  }
+
   function saveNow() {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(collect(false)));
-    } catch (err) {
-      log("Не удалось записать localStorage", "err");
-    }
+    storageSet(LS_KEY, JSON.stringify(collect(false)));
   }
 
   function applyPreset(p) {
@@ -1100,13 +1107,11 @@ function push(user, text) {
 
   function loadLocal() {
     try {
-      var raw = localStorage.getItem(LS_KEY);
+      var raw = storageGet(LS_KEY);
       if (!raw) return;
       applyPreset(JSON.parse(raw));
       log("Настройки восстановлены", "meta");
-    } catch (err) {
-      log("Сохранённые настройки пропущены", "skip");
-    }
+    } catch (err) {}
   }
 
   function downloadPilot() {
